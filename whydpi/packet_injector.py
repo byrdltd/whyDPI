@@ -11,7 +11,7 @@ Implements Random Garbage Fake Packet strategy for DPI bypass.
 
 import logging
 import os
-from scapy.all import IP, TCP, Raw, send
+from scapy.all import IP, TCP, Raw, send, conf
 from .config import DEFAULT_TTL, FAKE_PACKET_SIZE
 
 logger = logging.getLogger(__name__)
@@ -42,6 +42,14 @@ class PacketInjector:
             ttl (int): Time-to-live for fake packets (default: 1)
             fake_size (int): Size of random garbage to inject (default: 500)
         """
+        # Force reload routing table to avoid boot-time race condition
+        # This ensures scapy has fresh routing info even if started early in boot
+        try:
+            conf.route.resync()
+            logger.debug("Scapy routing table resynced successfully")
+        except Exception as e:
+            logger.warning(f"Failed to resync routing table: {e}")
+
         self.ttl = ttl
         self.fake_size = fake_size
         self.stats = {
