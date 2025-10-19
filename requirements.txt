@@ -1,2 +1,11 @@
-NetfilterQueue>=1.1.0
-scapy>=2.5.0
+# Core dependencies for whyDPI
+# Pin versions for security and stability
+# Update with caution - test thoroughly after upgrading
+
+# NetfilterQueue: Linux packet queue manipulation
+# ~= allows patch releases (1.1.x) but not minor/major updates
+NetfilterQueue~=1.1.0
+
+# Scapy: Packet crafting and manipulation
+# Allow minor updates within v2.x, prevent breaking changes in v3.x
+scapy>=2.5.0,<3.0.0

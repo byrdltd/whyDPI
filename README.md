@@ -38,6 +38,32 @@ Bu araç sadece eğitim amaçlı ve ağ güvenliği araştırması için sağlan
 
 ---
 
+## ⚡ Quick Start
+
+**TL;DR:** Install and run whyDPI in 3 commands (requires Linux and root access):
+
+```bash
+# 1. Clone the repository
+git clone https://github.com/byrdltd/whyDPI.git
+cd whyDPI
+
+# 2. Run the installation script (interactive)
+sudo bash install.sh
+
+# 3. Start whyDPI
+sudo whydpi start
+```
+
+**That's it!** whyDPI is now bypassing DPI restrictions. To stop:
+
+```bash
+sudo whydpi stop
+```
+
+**Need more control?** See [Installation](#installation) and [Usage](#usage) sections below.
+
+---
+
 ## What is whyDPI?
 
 whyDPI is a minimal, educational tool for understanding Deep Packet Inspection (DPI) bypass techniques used by network security researchers and privacy advocates.

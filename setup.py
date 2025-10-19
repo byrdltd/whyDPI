@@ -1,3 +1,7 @@
+# Copyright (c) 2025 whyDPI Contributors
+# SPDX-License-Identifier: MIT
+# For educational and research purposes only
+
 """
 Setup script for whyDPI
 """
@@ -34,8 +38,8 @@ setup(
     ],
     python_requires=">=3.8",
     install_requires=[
-        "NetfilterQueue>=1.1.0",
-        "scapy>=2.5.0",
+        "NetfilterQueue~=1.1.0",
+        "scapy>=2.5.0,<3.0.0",
     ],
     entry_points={
         "console_scripts": [
