@@ -4,7 +4,8 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Linux](https://img.shields.io/badge/platform-linux-lightgrey.svg)](https://www.linux.org/)
+[![Platform](https://img.shields.io/badge/platform-Arch%20Linux-1793D1.svg)](https://archlinux.org/)
+[![Tested](https://img.shields.io/badge/tested%20on-Arch%20%2F%20CachyOS-success)](https://github.com/byrdltd/whyDPI)
 
 ---
 
@@ -114,7 +115,9 @@ whyDPI uses **Random Garbage Fake Packet Injection** - a simple yet effective te
 
 ### Prerequisites
 
-- **Linux** (tested on Arch/CachyOS, should work on Debian/Ubuntu/Fedora)
+- **Linux** (✅ **tested and working on Arch Linux / CachyOS**)
+  - ⚠️ **Other distros**: Untested but should work (Debian, Ubuntu, Fedora, etc.)
+  - ⚠️ Community testing and feedback welcome!
 - **Python 3.8+**
 - **Root access** (required for iptables and raw sockets)
 
@@ -135,13 +138,13 @@ sudo ./install.sh
 
 ```bash
 # Install system dependencies
-# Arch/CachyOS:
+# ✅ Arch/CachyOS (TESTED):
 sudo pacman -S python python-pip libnetfilter_queue iptables-nft
 
-# Debian/Ubuntu:
+# ⚠️ Debian/Ubuntu (UNTESTED - community feedback welcome):
 sudo apt install python3 python3-pip libnetfilter-queue1 iptables
 
-# Fedora:
+# ⚠️ Fedora (UNTESTED - community feedback welcome):
 sudo dnf install python3 python3-pip libnetfilter_queue iptables
 
 # Install Python dependencies (Arch users add --break-system-packages)
@@ -463,7 +466,7 @@ This software is provided "AS IS" without warranty of any kind.
 A: No significant impact. whyDPI only processes first few packets of each connection.
 
 **Q: Does this work on other distros?**
-A: Yes, works on any Linux with iptables/systemd. Adjust package manager commands as needed.
+A: **Tested and confirmed working on Arch Linux / CachyOS.** Should work on any Linux with iptables/systemd (Debian, Ubuntu, Fedora, etc.), but these are untested. Community testing and feedback highly appreciated!
 
 **Q: Can I use this with VPN/Tor?**
 A: whyDPI is not a VPN. It can be used alongside VPN for additional privacy, but it's designed for direct connections.
