@@ -254,7 +254,7 @@ Test with websites that may be subject to DPI inspection in your region:
 sudo whydpi start --configure-dns
 
 # Test in browser
-# - https://discord.com
+# - https://example.com
 # - Other sites as appropriate for your research
 ```
 
@@ -290,7 +290,7 @@ ISPs use Deep Packet Inspection to analyze HTTPS traffic (SNI in TLS handshake).
 **Solution:** Inject random garbage packets with TTL=3 to confuse DPI:
 
 ```
-1. Browser sends: [Real TLS ClientHello with SNI: discord.com]
+1. Browser sends: [Real TLS ClientHello with SNI: example.com]
 2. whyDPI captures it via NFQUEUE
 3. whyDPI generates: 500 bytes of random garbage (os.urandom - cryptographically secure)
 4. whyDPI injects: Garbage packet with TTL=3, SAME SEQ as real packet
@@ -406,7 +406,7 @@ lsmod | grep nfnetlink
 1. **Verify DNS is configured**:
    ```bash
    cat /etc/resolv.conf  # Should show: nameserver 77.88.8.8
-   getent ahosts discord.com  # Should show real Cloudflare IPs (162.159.x.x), NOT ISP fake IPs
+   getent ahosts example.com  # Should show real IPs, NOT ISP fake IPs
    ```
 
 2. **Check systemd-resolved status**:
