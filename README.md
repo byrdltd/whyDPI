@@ -1,11 +1,17 @@
-# whyDPI
+<div align="center">
+  <img src="logo.png" alt="whyDPI Logo" width="500">
 
-**Educational DPI Bypass Tool for Research Purposes**
+  <h1>whyDPI</h1>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![Platform](https://img.shields.io/badge/platform-Arch%20Linux-1793D1.svg)](https://archlinux.org/)
-[![Tested](https://img.shields.io/badge/tested%20on-Arch%20%2F%20CachyOS-success)](https://github.com/byrdltd/whyDPI)
+  <p><strong>Educational DPI Bypass Tool for Research Purposes</strong></p>
+
+  <p>
+    <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+"></a>
+    <a href="https://archlinux.org/"><img src="https://img.shields.io/badge/platform-Arch%20Linux-1793D1.svg" alt="Platform"></a>
+    <a href="https://github.com/byrdltd/whyDPI"><img src="https://img.shields.io/badge/tested%20on-Arch%20%2F%20CachyOS-success" alt="Tested"></a>
+  </p>
+</div>
 
 ---
 
