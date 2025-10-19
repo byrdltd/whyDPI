@@ -1,0 +1,20 @@
+[Unit]
+Description=whyDPI - Educational DPI Bypass Tool
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -m whydpi start --configure-dns
+ExecStop=/usr/bin/python3 -m whydpi stop
+Restart=on-failure
+RestartSec=5
+User=root
+
+# Security
+PrivateTmp=yes
+NoNewPrivileges=false
+ProtectSystem=false
+ProtectHome=false
+
+[Install]
+WantedBy=multi-user.target
