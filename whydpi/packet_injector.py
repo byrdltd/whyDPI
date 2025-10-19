@@ -34,6 +34,73 @@ class PacketInjector:
     5. Simple, effective, 100% independent
     """
 
+    def _detect_interface_with_retry(self, max_retries=5, retry_delay=1):
+        """
+        Detect network interface with retry logic for boot-time scenarios.
+
+        Root cause of boot-time failure:
+        - whydpi starts when NetworkManager says "startup complete"
+        - But DHCP lease may still be in progress (takes ~2 more seconds)
+        - Default route not yet configured (CONNECTED_LOCAL state)
+        - scapy's conf.route.route() returns loopback
+
+        Solution:
+        - Retry with exponential backoff
+        - Filter out loopback interface
+        - Prefer interface with default route
+
+        Args:
+            max_retries (int): Maximum number of detection attempts
+            retry_delay (float): Initial delay between retries (seconds)
+
+        Returns:
+            str: Network interface name (e.g., 'enp42s0') or None
+        """
+        import time
+        import subprocess
+
+        for attempt in range(max_retries):
+            try:
+                # Method 1: Try to get interface from default route (most reliable)
+                result = subprocess.run(
+                    ['ip', 'route', 'show', 'default'],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                if result.returncode == 0 and result.stdout:
+                    # Parse: "default via 192.168.1.1 dev enp42s0 ..."
+                    parts = result.stdout.split()
+                    if 'dev' in parts:
+                        iface = parts[parts.index('dev') + 1]
+                        logger.info(f"Detected interface from default route: {iface}")
+                        return iface
+
+                # Method 2: Use scapy but filter out loopback
+                conf.route.resync()
+                iface, _, _ = conf.route.route("8.8.8.8")
+                if iface and iface != 'lo':
+                    logger.info(f"Detected interface from scapy: {iface}")
+                    return iface
+
+                # Method 3: If loopback was selected, network isn't ready yet
+                if iface == 'lo':
+                    logger.warning(f"Attempt {attempt + 1}/{max_retries}: Network not ready (loopback selected), retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 1.5  # Exponential backoff
+                    continue
+
+            except Exception as e:
+                logger.warning(f"Attempt {attempt + 1}/{max_retries}: Interface detection failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    retry_delay *= 1.5
+                    continue
+
+        # Fallback: Let scapy try to find route at send time
+        logger.error("Failed to detect network interface after retries, falling back to auto-detection")
+        return None
+
     def __init__(self, ttl=DEFAULT_TTL, fake_size=FAKE_PACKET_SIZE):
         """
         Initialize packet injector.
@@ -42,24 +109,10 @@ class PacketInjector:
             ttl (int): Time-to-live for fake packets (default: 1)
             fake_size (int): Size of random garbage to inject (default: 500)
         """
-        # Force reload routing table to avoid boot-time race condition
-        # This ensures scapy has fresh routing info even if started early in boot
-        try:
-            conf.route.resync()
-            logger.debug("Scapy routing table resynced successfully")
-        except Exception as e:
-            logger.warning(f"Failed to resync routing table: {e}")
-
-        # Detect network interface for packet injection
-        # This is critical for boot-time operation when routing cache is empty
-        # We must explicitly specify interface to send() to avoid "no route found" errors
-        try:
-            self.iface, _, _ = conf.route.route("8.8.8.8")
-            logger.info(f"Using network interface: {self.iface}")
-        except Exception as e:
-            logger.error(f"Failed to detect network interface: {e}")
-            # Fall back to None - send() will try to find route itself
-            self.iface = None
+        # Detect network interface with boot-time retry logic
+        # Problem: At boot, DHCP may not be complete yet, causing loopback selection
+        # Solution: Retry with backoff, filter out loopback, prefer default route
+        self.iface = self._detect_interface_with_retry()
 
         self.ttl = ttl
         self.fake_size = fake_size
@@ -67,7 +120,11 @@ class PacketInjector:
             'injected': 0,
             'errors': 0
         }
-        logger.info(f"PacketInjector initialized: TTL={ttl}, fake_size={fake_size} bytes (random garbage)")
+
+        if self.iface:
+            logger.info(f"PacketInjector initialized: interface={self.iface}, TTL={ttl}, fake_size={fake_size} bytes")
+        else:
+            logger.warning(f"PacketInjector initialized without interface (auto-detection mode), TTL={ttl}, fake_size={fake_size} bytes")
 
     def inject_random_garbage(self, src_ip, dst_ip, src_port, dst_port, seq):
         """
