@@ -50,14 +50,16 @@ class PacketInjector:
         except Exception as e:
             logger.warning(f"Failed to resync routing table: {e}")
 
-        # Trigger route resolution to ensure routing table is properly loaded
-        # This avoids "no route found" errors during packet injection
-        # We don't actually use the interface value, just force route initialization
+        # Detect network interface for packet injection
+        # This is critical for boot-time operation when routing cache is empty
+        # We must explicitly specify interface to send() to avoid "no route found" errors
         try:
-            iface, _, _ = conf.route.route("8.8.8.8")
-            logger.debug(f"Routing table loaded successfully (interface: {iface})")
+            self.iface, _, _ = conf.route.route("8.8.8.8")
+            logger.info(f"Using network interface: {self.iface}")
         except Exception as e:
-            logger.warning(f"Failed to load routing table: {e}")
+            logger.error(f"Failed to detect network interface: {e}")
+            # Fall back to None - send() will try to find route itself
+            self.iface = None
 
         self.ttl = ttl
         self.fake_size = fake_size
@@ -113,6 +115,8 @@ class PacketInjector:
             ) / Raw(load=random_garbage)
 
             # Send via raw socket (requires root)
+            # Note: For Layer 3 (IP) packets, Scapy uses routing table automatically
+            # The conf.route.route() call in __init__ ensures routing table is loaded
             send(fake_packet, verbose=0)
 
             self.stats['injected'] += 1
