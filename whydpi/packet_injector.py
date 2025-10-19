@@ -50,6 +50,15 @@ class PacketInjector:
         except Exception as e:
             logger.warning(f"Failed to resync routing table: {e}")
 
+        # Trigger route resolution to ensure routing table is properly loaded
+        # This avoids "no route found" errors during packet injection
+        # We don't actually use the interface value, just force route initialization
+        try:
+            iface, _, _ = conf.route.route("8.8.8.8")
+            logger.debug(f"Routing table loaded successfully (interface: {iface})")
+        except Exception as e:
+            logger.warning(f"Failed to load routing table: {e}")
+
         self.ttl = ttl
         self.fake_size = fake_size
         self.stats = {
