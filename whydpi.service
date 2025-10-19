@@ -1,7 +1,7 @@
 [Unit]
 Description=whyDPI - Educational DPI Bypass Tool
-After=network-online.target
-Wants=network-online.target
+After=network-online.target NetworkManager-wait-online.service
+Wants=network-online.target NetworkManager-wait-online.service
 
 [Service]
 Type=simple
