@@ -110,7 +110,7 @@ sudo ./install.sh
 ```bash
 # Install system dependencies
 # Arch/CachyOS:
-sudo pacman -S python python-pip libnetfilter_queue iptables
+sudo pacman -S python python-pip libnetfilter_queue iptables-nft
 
 # Debian/Ubuntu:
 sudo apt install python3 python3-pip libnetfilter-queue1 iptables
@@ -118,10 +118,10 @@ sudo apt install python3 python3-pip libnetfilter-queue1 iptables
 # Fedora:
 sudo dnf install python3 python3-pip libnetfilter_queue iptables
 
-# Install Python dependencies
+# Install Python dependencies (Arch users add --break-system-packages)
 pip3 install -r requirements.txt
 
-# Install whyDPI
+# Install whyDPI (Arch users add --break-system-packages)
 pip3 install -e .
 ```
 

@@ -50,7 +50,17 @@ echo ""
 echo "📥 Installing system dependencies..."
 
 if [ "$PKG_MANAGER" = "pacman" ]; then
-    $INSTALL_CMD python python-pip libnetfilter_queue iptables
+    # Arch Linux: Check if iptables OR iptables-nft is already installed
+    # Both packages provide /usr/bin/iptables but conflict with each other
+    if pacman -Qi iptables &>/dev/null || pacman -Qi iptables-nft &>/dev/null; then
+        # iptables already installed (either legacy or nft), skip it
+        echo "ℹ️  iptables already installed, skipping..."
+        $INSTALL_CMD python python-pip libnetfilter_queue
+    else
+        # No iptables package, install iptables-nft (modern nftables backend)
+        echo "ℹ️  Installing iptables-nft (modern nftables backend)..."
+        $INSTALL_CMD python python-pip libnetfilter_queue iptables-nft
+    fi
 elif [ "$PKG_MANAGER" = "apt" ]; then
     $INSTALL_CMD python3 python3-pip libnetfilter-queue1 iptables
 elif [ "$PKG_MANAGER" = "dnf" ]; then
