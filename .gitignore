@@ -69,3 +69,13 @@ config.local.yml
 
 # Docs - keep legacy stuff private
 docs/
+
+# Security - CRITICAL: Never commit credentials
+.git-credentials
+.netrc
+*.token
+*.key
+.env
+.env.*
+credentials.json
+secrets.*
