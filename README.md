@@ -15,9 +15,7 @@
 
 ---
 
-## ⚠️ DISCLAIMER / YASAL UYARI
-
-### English
+## ⚠️ DISCLAIMER
 
 **FOR EDUCATIONAL AND RESEARCH PURPOSES ONLY**
 
@@ -29,19 +27,6 @@ This tool is provided for educational purposes and network security research onl
 - ⚠️ This tool is provided "AS IS" without warranty of any kind
 
 **By using this software, you acknowledge that you have read this disclaimer and agree to use it responsibly and legally.**
-
-### Türkçe
-
-**SADECE EĞİTİM VE ARAŞTIRMA AMAÇLIDIR**
-
-Bu araç sadece eğitim amaçlı ve ağ güvenliği araştırması için sağlanmaktadır. Kullanıcılar bulundukları yargı bölgesindeki tüm geçerli yasa ve düzenlemelere uymaktan **tamamen sorumludur**.
-
-- ⚠️ Ağ kısıtlamalarını aşmak hizmet şartlarını veya yerel yasaları ihlal edebilir
-- ⚠️ Geliştiriciler ve katkıda bulunanlar kötüye kullanımdan **SORUMLU DEĞİLDİR**
-- ⚠️ Kullanım riski ve sorumluluğu **size aittir**
-- ⚠️ Bu araç "OLDUĞU GİBİ" herhangi bir garanti olmaksızın sağlanmaktadır
-
-**Bu yazılımı kullanarak, bu uyarıyı okuduğunuzu ve sorumlu ve yasal bir şekilde kullanmayı kabul ettiğinizi onaylamış olursunuz.**
 
 ---
 
