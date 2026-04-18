@@ -328,12 +328,18 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.event.inputs.tag || github.ref_name }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
           shopt -s nullglob
+
+          echo "gh version:"
+          gh --version
+          echo "GH_TOKEN set: $([ -n "${GH_TOKEN:-}" ] && echo yes || echo NO)"
+          echo "GITHUB_REPOSITORY: ${GITHUB_REPOSITORY:-unset}"
+          echo "TAG: $TAG"
 
           mapfile -t FILES < <(ls dist/*.deb dist/*.rpm dist/*.exe 2>/dev/null)
           if [ "${#FILES[@]}" -eq 0 ]; then
-            echo "no artefacts to upload" >&2
+            echo "::error::no artefacts to upload" >&2
             exit 1
           fi
           echo "uploading ${#FILES[@]} file(s):"
@@ -342,12 +348,23 @@ jobs:
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "release $TAG already exists — uploading assets (overwrite)"
             gh release upload "$TAG" "${FILES[@]}" --clobber
+            rc=$?
           else
             echo "creating release $TAG"
             gh release create "$TAG" "${FILES[@]}" \
               --title "$TAG" \
-              --generate-notes
+              --generate-notes 2>&1 | tee /tmp/ghcreate.log
+            rc=${PIPESTATUS[0]}
+            if [ "$rc" -ne 0 ]; then
+              # Turn the first non-empty error line into a workflow annotation
+              while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                safe=$(printf '%s' "$line" | sed 's/%/%25/g' | tr '\n' ' ')
+                echo "::error title=gh release create::$safe"
+              done < /tmp/ghcreate.log
+            fi
           fi
+          exit ${rc:-0}
 
   # --------------------------------------------------------------------------
   #  Scoop bucket manifest — update hash + version in bucket/whydpi.json
