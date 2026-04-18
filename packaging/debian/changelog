@@ -4,7 +4,16 @@ whydpi (0.2.3-1) unstable; urgency=medium
     (fixes CreateProcess error 740 on "Finish") and the uninstaller's
     DNS-restore hook; whydpi.ui.tray / whydpi.cli are now correctly
     bundled into the PyInstaller onefile executables.
-  * Linux .deb is functionally identical to 0.2.2.
+  * Linux: the tray now autostarts on login via an XDG autostart entry
+    shipped in /etc/xdg/autostart/.  Previously users who installed the
+    .deb saw no tray at all on first login and could not tell whether
+    the service was active.
+  * Linux: hicolor application icons (16–512px) are installed so the
+    tray's Icon=whydpi renders at any panel size.
+  * Linux: the tray fires a libnotify toast at startup and on every
+    service state transition, so "is whyDPI actually running right
+    now?" is answerable at a glance without hunting for a greyed vs.
+    coloured panel indicator.
 
  -- byrdltd <byrdltd@users.noreply.github.com>  Sat, 18 Apr 2026 09:00:00 +0000
 

@@ -14,6 +14,22 @@ override_dh_installsystemd:
 	install -D -m 644 whydpi.service debian/whydpi.service
 	dh_installsystemd --no-enable --no-start
 
+# Install the tray's .desktop file (application menu) and an XDG
+# autostart copy (login start) plus the hicolor icon bundle, so users
+# see a working, labelled, state-aware tray the first time they log
+# in after `apt install`.  Installed manually because pybuild does
+# not know about these asset paths.
+override_dh_install:
+	dh_install
+	install -D -m 644 packaging/desktop/whydpi-tray.desktop \
+	    debian/whydpi/usr/share/applications/whydpi-tray.desktop
+	install -D -m 644 packaging/desktop/whydpi-tray.desktop \
+	    debian/whydpi/etc/xdg/autostart/whydpi-tray.desktop
+	set -e; for sz in 16 32 48 64 128 256 512; do \
+	  install -D -m 644 assets/logo-$${sz}.png \
+	    debian/whydpi/usr/share/icons/hicolor/$${sz}x$${sz}/apps/whydpi.png; \
+	done
+
 # The systemd service is not enabled by default — let the user decide.
 override_dh_auto_clean:
 	dh_auto_clean

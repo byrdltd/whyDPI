@@ -9,5 +9,10 @@ Terminal=false
 Categories=Network;Utility;
 Keywords=dpi;tls;bypass;network;proxy;
 StartupNotify=false
-# Uncomment to autostart at login:
-# X-GNOME-Autostart-enabled=true
+# Autostart defaults — picked up by KDE/Plasma, GNOME, XFCE, LXQt and
+# any other freedesktop-compliant session because the install rule
+# copies this very file to /etc/xdg/autostart/.  Users can disable it
+# per-session from their desktop's "Autostart" settings without us
+# needing to ship two drifting copies.
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-phase=2

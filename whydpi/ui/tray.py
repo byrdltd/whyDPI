@@ -240,6 +240,78 @@ def _about(_icon, _item) -> None:
     webbrowser.open(_ABOUT_URL)
 
 
+def _notify_icon_path() -> str:
+    """Resolve an absolute filesystem path to our tray PNG.
+
+    ``notify-send --icon=whydpi`` resolves against the system XDG icon
+    theme, which is only populated after the .deb/.rpm/AUR install
+    drops hicolor icons into ``/usr/share/icons``.  On a fresh pip
+    install, and on every developer's local dev tree, no such theme
+    entry exists, so libnotify falls back to the dreaded "?" glyph.
+    Using an absolute path sidesteps the theme resolver entirely and
+    renders the real logo regardless of how whyDPI was installed.
+    """
+    try:
+        # ``as_file`` writes zipped resources out to a real path when
+        # needed — for wheels installed normally (our case on Linux +
+        # the Windows PyInstaller bundle) it just returns the existing
+        # on-disk location.  We leak the temp handle deliberately: the
+        # tray runs for the whole session so the file must stay alive
+        # past this function's return.
+        # Prefer the high-res notify variant, fall back to the 64px tray
+        # panel icon if the wheel is built without it.
+        assets = resources.files("whydpi.ui").joinpath("_assets")
+        for name in ("notify.png", "tray.png"):
+            cand = assets.joinpath(name)
+            s = str(cand)
+            if os.path.isfile(s):
+                return s
+        return ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+# Resolved once at import so the notify path doesn't repeatedly hit
+# importlib.resources on every state transition.
+_ICON_PATH = _notify_icon_path()
+
+
+def _notify(summary: str, body: str = "") -> None:
+    """Fire a best-effort desktop notification.
+
+    Users repeatedly reported "I can't tell whether whyDPI is actually
+    running" — the tooltip and icon tint are there, but easy to miss on
+    a busy panel.  A toast at startup and on every state transition
+    gives unambiguous feedback without modal dialogs.  Silent no-op if
+    libnotify isn't installed (common on headless setups).
+    """
+    if IS_WINDOWS:
+        # pystray's own notify works well against the Win32 shell.
+        return
+    notify_send = shutil.which("notify-send")
+    if not notify_send:
+        return
+    # Prefer the absolute PNG so we render the logo even when the
+    # system icon theme has no whydpi entry yet (dev installs, first
+    # login after .deb upgrade before gtk-update-icon-cache runs, ...).
+    icon = _ICON_PATH if _ICON_PATH and os.path.isfile(_ICON_PATH) else "whydpi"
+    try:
+        subprocess.Popen(
+            [
+                notify_send,
+                "--app-name=whyDPI",
+                f"--icon={icon}",
+                "--expire-time=4000",
+                summary,
+                body,
+            ],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _print_missing_deps_and_exit(exc: Exception) -> int:
     print(
         "whyDPI tray requires the optional tray extras:\n"
@@ -349,11 +421,26 @@ def run() -> int:
                     icon.update_menu()
                 except Exception:  # noqa: BLE001
                     pass
+                if now:
+                    _notify("whyDPI is protecting your connection",
+                            "Traffic is being handled by the adaptive TLS fragmenter.")
+                else:
+                    _notify("whyDPI stopped",
+                            "DNS has been restored to its original servers.")
 
     def setup(_icon) -> None:
         _icon.visible = True
         t = threading.Thread(target=poller, name="whydpi-tray-poll", daemon=True)
         t.start()
+        # Fire a single "I'm here" toast so the user knows the tray
+        # autostarted and the current service state, without having to
+        # hunt for a grey-vs-colour icon amongst 20 other indicators.
+        if state["running"]:
+            _notify("whyDPI is active",
+                    "Tray running — your connection is being protected.")
+        else:
+            _notify("whyDPI tray started",
+                    "Service is currently stopped.  Click the tray icon to start it.")
 
     if "PYSTRAY_BACKEND" in os.environ:
         logger.info("tray backend override: %s", os.environ["PYSTRAY_BACKEND"])

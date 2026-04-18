@@ -24,6 +24,10 @@ Depends:
  ${python3:Depends},
  iptables,
  python3 (>= 3.10)
+Recommends:
+ python3-pystray,
+ python3-pil,
+ libnotify-bin
 Description: Adaptive, per-SNI DPI bypass with TLS fragmentation
  whyDPI is a transparent TLS proxy and DNS forwarder for research
  environments.  It ships zero hard-coded hostnames: what works for a
