@@ -3,11 +3,12 @@
 </p>
 
 <p align="center">
-  <i>Educational DPI bypass tool for Linux research environments.</i>
+  <i>Educational DPI bypass tool.  Runs on Linux and Windows.</i>
 </p>
 
 
-whyDPI is a transparent TLS proxy and DNS forwarder.  It ships **zero
+whyDPI is a transparent TLS proxy (Linux) / packet-level TLS shaper
+(Windows) combined with an optional DNS forwarder.  It ships **zero
 hard-coded hostnames, domains or ISP-specific resolvers**: what works for a
 given destination is discovered at runtime, cached per-SNI, and refined when
 conditions change.
@@ -91,6 +92,32 @@ cd whyDPI
 sudo ./install.sh
 ```
 
+### Windows 10 / 11
+
+Two installation options, pick whichever fits your workflow:
+
+**Installer (recommended)** — double-click `whydpi-*-setup.exe` from the
+[Releases page](https://github.com/byrdltd/whyDPI/releases).  The
+installer registers Start-menu shortcuts and optionally creates an
+elevated Task Scheduler entry for autostart at login.
+
+**Scoop** — no account, no manual download, auto-update on `scoop
+update`:
+
+```powershell
+scoop bucket add whydpi https://github.com/byrdltd/whyDPI
+scoop install whydpi
+```
+
+Either way, launching **whyDPI** triggers a single UAC prompt (the tray
+needs admin rights to load the WinDivert kernel driver and to rewrite
+adapter DNS via `netsh`).  Right-click the tray icon → **Start
+whyDPI**, browse, done.
+
+The Windows build uses packet-layer TLS fragmentation rather than a
+userspace proxy; behaviour is otherwise identical to the Linux build
+(per-SNI strategy discovery, session-only cache, clean shutdown).
+
 ## Configuration
 
 whyDPI reads `~/.config/whydpi/config.toml` at startup.  All values are
@@ -143,10 +170,17 @@ sudo whydpi dns-restore
 
 ## System requirements
 
-- Linux
+**Linux**
 - Python 3.10+ (`tomllib`; on 3.10 install `tomli` via `requirements.txt`)
 - `iptables` or `iptables-nft` (IPv6 rules need `ip6tables`)
 - Root privileges
+
+**Windows**
+- Windows 10 1809 or later, or Windows 11 (x64)
+- Administrator rights (UAC prompt at launch; WinDivert driver + `netsh`
+  both require elevation)
+- Nothing to pre-install; the installer bundles Python, `pydivert` and
+  the signed WinDivert 2.x driver.
 
 ## Notes
 

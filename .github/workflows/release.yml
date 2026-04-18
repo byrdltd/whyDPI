@@ -11,7 +11,7 @@ on:
         type: string
 
 permissions:
-  contents: write  # required for softprops/action-gh-release to upload assets
+  contents: write  # upload release assets + push bucket manifest updates
 
 jobs:
   # --------------------------------------------------------------------------
@@ -97,11 +97,110 @@ jobs:
           retention-days: 7
 
   # --------------------------------------------------------------------------
+  #  Windows  →  whydpi-tray.exe + whydpi.exe + whydpi-<ver>-setup.exe
+  # --------------------------------------------------------------------------
+  windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build deps
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[windows]"
+          pip install pyinstaller
+
+      - name: Derive version
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag || github.ref_name }}"
+          $ver = $tag -replace '^v', ''
+          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = '0.0.0' }
+          "WHYDPI_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "version=$ver"        | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "resolved version: $ver"
+
+      - name: Build whydpi-tray.exe
+        shell: pwsh
+        working-directory: packaging\windows
+        run: |
+          pyinstaller --onefile --windowed --uac-admin `
+            --icon="..\..\assets\favicon.ico" `
+            --add-data "..\..\whydpi\ui\_assets;whydpi\ui\_assets" `
+            --collect-all pydivert `
+            --collect-all pystray `
+            --collect-all PIL `
+            --hidden-import whydpi.platforms.windows `
+            --hidden-import whydpi.system.windivert `
+            --hidden-import whydpi.system.dns_windows `
+            --name whydpi-tray `
+            --distpath build\dist `
+            --workpath build\work `
+            --specpath build `
+            tray_entry.py
+
+      - name: Build whydpi.exe
+        shell: pwsh
+        working-directory: packaging\windows
+        run: |
+          pyinstaller --onefile --console --uac-admin `
+            --icon="..\..\assets\favicon.ico" `
+            --collect-all pydivert `
+            --hidden-import whydpi.platforms.windows `
+            --hidden-import whydpi.system.windivert `
+            --hidden-import whydpi.system.dns_windows `
+            --name whydpi `
+            --distpath build\dist `
+            --workpath build\work `
+            --specpath build `
+            cli_entry.py
+
+      - name: Smoke-test the built tray (version-only)
+        shell: pwsh
+        working-directory: packaging\windows\build\dist
+        run: |
+          # Not elevated here; the tray must refuse cleanly rather than crash.
+          $out = & ".\whydpi-tray.exe" 2>&1
+          Write-Host "tray exit: $LASTEXITCODE"
+          Write-Host "tray output: $out"
+
+      - name: Compile Inno Setup installer
+        shell: pwsh
+        working-directory: packaging\windows
+        env:
+          WHYDPI_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          # ISCC ships with Inno Setup 6 preinstalled on windows-latest images.
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" whydpi.iss
+
+      - name: Collect artefacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          Copy-Item packaging\windows\build\dist\whydpi-tray.exe out\
+          Copy-Item packaging\windows\build\dist\whydpi.exe      out\
+          Copy-Item packaging\windows\dist\*.exe                 out\
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: out\*.exe
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
   #  Attach everything to the release (tag pushes only)
   # --------------------------------------------------------------------------
   release:
     name: Attach to GitHub Release
-    needs: [deb, rpm]
+    needs: [deb, rpm, windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
     steps:
@@ -120,4 +219,60 @@ jobs:
           files: |
             dist/*.deb
             dist/*.rpm
+            dist/*.exe
           fail_on_unmatched_files: true
+
+  # --------------------------------------------------------------------------
+  #  Scoop bucket manifest — update hash + version in bucket/whydpi.json
+  #  so `scoop install whydpi` works immediately after the release lands.
+  # --------------------------------------------------------------------------
+  scoop-bucket:
+    name: Refresh Scoop manifest
+    needs: [release]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: windows-assets
+
+      - name: Update bucket/whydpi.json
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VER="${TAG#v}"
+          EXE="windows-assets/whydpi-tray.exe"
+          [ -f "$EXE" ] || { echo "missing $EXE"; exit 1; }
+          HASH=$(sha256sum "$EXE" | awk '{print $1}')
+          python3 - "$VER" "$HASH" <<'PY'
+          import json, pathlib, sys
+          ver, hsh = sys.argv[1], sys.argv[2]
+          p = pathlib.Path("bucket/whydpi.json")
+          data = json.loads(p.read_text(encoding="utf-8"))
+          data["version"] = ver
+          data["architecture"]["64bit"]["url"] = (
+              f"https://github.com/byrdltd/whyDPI/releases/download/v{ver}/whydpi-tray.exe"
+          )
+          data["architecture"]["64bit"]["hash"] = hsh
+          p.write_text(json.dumps(data, indent=4) + "\n", encoding="utf-8")
+          print(f"bucket/whydpi.json -> {ver} / {hsh[:12]}...")
+          PY
+
+      - name: Commit and push
+        run: |
+          set -e
+          git config user.name  "whydpi-release-bot"
+          git config user.email "whydpi-release-bot@users.noreply.github.com"
+          if git diff --quiet bucket/whydpi.json; then
+            echo "no manifest change; skipping commit"
+            exit 0
+          fi
+          git add bucket/whydpi.json
+          git commit -m "Refresh Scoop manifest for ${{ github.event.inputs.tag || github.ref_name }}"
+          git push origin HEAD:main

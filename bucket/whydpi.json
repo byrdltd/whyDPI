@@ -1,0 +1,35 @@
+{
+    "version": "0.0.0",
+    "description": "Adaptive, per-SNI DPI bypass that learns optimal TLS fragmentation per host.",
+    "homepage": "https://github.com/byrdltd/whyDPI",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/byrdltd/whyDPI/releases/download/v0.0.0/whydpi-tray.exe",
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+        }
+    },
+    "shortcuts": [
+        [
+            "whydpi-tray.exe",
+            "whyDPI"
+        ]
+    ],
+    "notes": [
+        "whyDPI needs Administrator rights to load the WinDivert driver",
+        "and to reconfigure adapter DNS via netsh.  Scoop installs into",
+        "%USERPROFILE%\\scoop\\apps\\whydpi\\current which is writable",
+        "without elevation, but launching whydpi-tray.exe triggers a UAC",
+        "prompt because the exe is built with an embedded admin manifest."
+    ],
+    "checkver": {
+        "github": "https://github.com/byrdltd/whyDPI"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/byrdltd/whyDPI/releases/download/v$version/whydpi-tray.exe"
+            }
+        }
+    }
+}

@@ -1,22 +1,18 @@
 # Copyright (c) 2025 whyDPI Contributors
 # SPDX-License-Identifier: MIT
 
-"""System-tray icon for whyDPI.
+"""Cross-platform system-tray icon for whyDPI.
 
-Phase 3 delivers the real tray for Linux.  It:
+On Linux the tray delegates service lifecycle to ``systemd`` via
+``pkexec`` so a single polkit prompt per session covers Start and Stop.
+The tray itself runs unprivileged.
 
-* loads a packaged icon from ``whydpi/ui/_assets/tray.png``,
-* polls ``systemctl is-active whydpi.service`` every couple of seconds
-  and swaps between a colour / desaturated icon depending on state,
-* exposes a short menu — *Start / Stop* (via ``pkexec systemctl ...`` so
-  polkit handles the single password prompt per session), *Open cache
-  folder*, *About*, *Quit*,
-* writes nothing, registers no daemon, keeps no state of its own;
-  closing the icon or the whole user session has zero side effects on
-  the running service.
-
-The same file will drive the Windows tray in Phase 3 once the Windows
-engine exposes a `start()`/`stop()` surface equivalent to systemd.
+On Windows there is no equivalent of ``systemctl`` — the expected
+installation shape is a single elevated executable, so the tray *is*
+the engine host: Start spins up a worker thread that calls the shared
+:func:`whydpi.core.engine.run` end-to-end, and Stop signals it to exit.
+Both paths share menu layout, icon handling, cache-folder discovery
+and graceful-quit behaviour.
 """
 
 from __future__ import annotations
@@ -31,6 +27,7 @@ import time
 import webbrowser
 from importlib import resources
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -38,6 +35,9 @@ logger = logging.getLogger(__name__)
 SERVICE = "whydpi.service"
 _POLL_SECONDS = 2.0
 _ABOUT_URL = "https://github.com/byrdltd/whyDPI"
+
+IS_WINDOWS = sys.platform == "win32"
+IS_LINUX = sys.platform.startswith("linux")
 
 
 # ---------------------------------------------------------------------------
@@ -61,59 +61,158 @@ def _desaturate(image):
 
 
 # ---------------------------------------------------------------------------
-# Service control
+# Service controllers — one implementation per platform.  Both expose the
+# same tiny surface: is_installed / is_running / start / stop / teardown.
 # ---------------------------------------------------------------------------
 
-def _systemctl(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        ["systemctl", *args],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+class _LinuxSystemdController:
+    """Drives ``systemctl`` with a polkit-aware escalator for Start/Stop."""
+
+    name = "linux-systemd"
+
+    @staticmethod
+    def _systemctl(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["systemctl", *args],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+    @staticmethod
+    def _priv_launcher() -> list[str]:
+        for cand in ("pkexec", "kdesu", "gksu"):
+            p = shutil.which(cand)
+            if p:
+                return [p]
+        return ["sudo"]
+
+    def is_installed(self) -> bool:
+        r = self._systemctl("list-unit-files", SERVICE, "--no-legend")
+        return bool(r.stdout.strip())
+
+    def is_running(self) -> bool:
+        return self._systemctl("is-active", SERVICE).stdout.strip() == "active"
+
+    def start(self) -> None:
+        cmd = self._priv_launcher() + ["systemctl", "start", SERVICE]
+        logger.info("tray: launching: %s", " ".join(cmd))
+        subprocess.Popen(cmd)
+
+    def stop(self) -> None:
+        cmd = self._priv_launcher() + ["systemctl", "stop", SERVICE]
+        logger.info("tray: launching: %s", " ".join(cmd))
+        subprocess.Popen(cmd)
+
+    def teardown(self) -> None:
+        """Nothing to do: systemd owns the lifecycle."""
 
 
-def is_running() -> bool:
-    return _systemctl("is-active", SERVICE).stdout.strip() == "active"
+class _WindowsInProcessController:
+    """Runs the whydpi engine as a background thread inside the tray process.
 
-
-def is_installed() -> bool:
-    """Whether the systemd unit is present at all."""
-    r = _systemctl("list-unit-files", SERVICE, "--no-legend")
-    return bool(r.stdout.strip())
-
-
-def _priv_launcher() -> list[str]:
-    """Pick the best polkit-aware launcher available on the host.
-
-    ``pkexec`` is by far the most common; on systems where only ``sudo``
-    is installed we fall back to a graphical sudo frontend if present.
+    The Windows build ships a single elevated executable (PyInstaller
+    ``--uac-admin``) so the tray already has every privilege the engine
+    needs (WinDivert driver load, ``netsh`` adapter mutation).  Spinning
+    the engine up in-process removes the need for a Windows Service and
+    keeps all state — including the privacy-wiping cache — co-located
+    with the UI.
     """
-    for cand in ("pkexec", "kdesu", "gksu"):
-        p = shutil.which(cand)
-        if p:
-            return [p]
-    # Last resort — relies on a TTY but never blocks the tray silently.
-    return ["sudo"]
+
+    name = "windows-in-process"
+
+    def __init__(self) -> None:
+        self._state = SimpleNamespace(
+            running=False,
+            thread=None,
+            stop_event=None,
+            admin_ok=_is_admin_windows(),
+        )
+        self._lock = threading.Lock()
+
+    def is_installed(self) -> bool:  # noqa: D401
+        return True
+
+    def is_running(self) -> bool:
+        thread = self._state.thread
+        return bool(thread and thread.is_alive() and self._state.running)
+
+    def start(self) -> None:
+        with self._lock:
+            if self.is_running():
+                return
+            if not self._state.admin_ok:
+                logger.error(
+                    "tray: refusing to start engine — whydpi-tray is not "
+                    "running elevated; re-launch with admin rights."
+                )
+                return
+            event = threading.Event()
+            self._state.stop_event = event
+
+            def _block_until_stop() -> None:
+                event.wait()
+
+            def _worker() -> None:
+                try:
+                    from ..core import engine as _engine
+                    from ..settings import load_settings as _load_settings
+
+                    self._state.running = True
+                    _engine.run(
+                        _load_settings(),
+                        configure_resolver=True,
+                        block_until=_block_until_stop,
+                    )
+                except Exception:  # noqa: BLE001
+                    logger.exception("tray: engine worker crashed")
+                finally:
+                    self._state.running = False
+
+            t = threading.Thread(target=_worker, name="whydpi-engine",
+                                 daemon=True)
+            self._state.thread = t
+            t.start()
+            logger.info("tray: engine thread started")
+
+    def stop(self) -> None:
+        with self._lock:
+            event = self._state.stop_event
+            if event is not None:
+                event.set()
+                logger.info("tray: engine stop requested")
+
+    def teardown(self) -> None:
+        self.stop()
+        t = self._state.thread
+        if t is not None:
+            t.join(timeout=5)
 
 
-def start_service() -> None:
-    cmd = _priv_launcher() + ["systemctl", "start", SERVICE]
-    logger.info("tray: launching: %s", " ".join(cmd))
-    subprocess.Popen(cmd)
+def _is_admin_windows() -> bool:
+    if not IS_WINDOWS:
+        return False
+    try:
+        import ctypes  # type: ignore
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001
+        return False
 
 
-def stop_service() -> None:
-    cmd = _priv_launcher() + ["systemctl", "stop", SERVICE]
-    logger.info("tray: launching: %s", " ".join(cmd))
-    subprocess.Popen(cmd)
+def _make_controller():
+    if IS_WINDOWS:
+        return _WindowsInProcessController()
+    return _LinuxSystemdController()
 
 
 # ---------------------------------------------------------------------------
-# UI — pystray driver
+# Tray helpers
 # ---------------------------------------------------------------------------
 
 def _cache_dir() -> Path:
+    if IS_WINDOWS:
+        base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+        return Path(base) / "whyDPI"
     for candidate in (
         Path("/run/whydpi"),
         Path.home() / ".cache" / "whydpi",
@@ -126,6 +225,12 @@ def _cache_dir() -> Path:
 def _open_cache(_icon, _item) -> None:
     path = _cache_dir()
     path.mkdir(parents=True, exist_ok=True)
+    if IS_WINDOWS:
+        try:
+            os.startfile(str(path))  # type: ignore[attr-defined]  # Windows-only
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("tray: unable to open cache folder: %s", exc)
+        return
     opener = shutil.which("xdg-open")
     if opener:
         subprocess.Popen([opener, str(path)])
@@ -148,6 +253,24 @@ def _print_missing_deps_and_exit(exc: Exception) -> int:
     return 2
 
 
+def _print_windows_not_admin_and_exit() -> int:
+    print(
+        "whyDPI Windows tray must run as Administrator so that:\n"
+        "  * WinDivert can load its kernel driver,\n"
+        "  * netsh can reconfigure adapter DNS servers.\n"
+        "\n"
+        "Right-click the whyDPI shortcut and choose 'Run as administrator'.\n"
+        "The installer registers the shortcut with a UAC manifest so a normal\n"
+        "double-click prompts for elevation automatically.",
+        file=sys.stderr,
+    )
+    return 3
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
 def run() -> int:
     try:
         import pystray  # type: ignore
@@ -159,7 +282,20 @@ def run() -> int:
     except Exception as exc:  # noqa: BLE001
         return _print_missing_deps_and_exit(exc)
 
-    state = {"running": is_running(), "stopped_by_user": False}
+    if IS_WINDOWS and not _is_admin_windows():
+        return _print_windows_not_admin_and_exit()
+
+    controller = _make_controller()
+
+    if not controller.is_installed():
+        print(
+            f"whyDPI service ({SERVICE}) is not installed.\n"
+            "Install the whydpi package (AUR, .deb, .rpm) first, then re-run the tray.",
+            file=sys.stderr,
+        )
+        return 1
+
+    state = {"running": controller.is_running(), "stopped_by_user": False}
 
     def current_icon() -> Any:
         return base if state["running"] else gray
@@ -167,14 +303,18 @@ def run() -> int:
     def title() -> str:
         return "whyDPI — running" if state["running"] else "whyDPI — stopped"
 
-    def toggle(icon, _item) -> None:
+    def toggle(_icon, _item) -> None:
         if state["running"]:
-            stop_service()
+            controller.stop()
         else:
-            start_service()
+            controller.start()
 
     def quit_app(icon, _item) -> None:
         state["stopped_by_user"] = True
+        try:
+            controller.teardown()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("tray: teardown: %s", exc)
         icon.visible = False
         icon.stop()
 
@@ -198,7 +338,7 @@ def run() -> int:
         while not state["stopped_by_user"]:
             time.sleep(_POLL_SECONDS)
             try:
-                now = is_running()
+                now = controller.is_running()
             except Exception:  # noqa: BLE001
                 continue
             if now != state["running"]:
@@ -206,9 +346,6 @@ def run() -> int:
                 try:
                     icon.icon = current_icon()
                     icon.title = title()
-                    # Menu labels / checkmark are driven by callables that
-                    # close over ``state``; pystray only re-evaluates them
-                    # when the menu is explicitly rebuilt.
                     icon.update_menu()
                 except Exception:  # noqa: BLE001
                     pass
@@ -218,22 +355,13 @@ def run() -> int:
         t = threading.Thread(target=poller, name="whydpi-tray-poll", daemon=True)
         t.start()
 
-    if not is_installed():
-        print(
-            f"whyDPI systemd unit ({SERVICE}) is not installed.\n"
-            "Install the whydpi package (AUR, .deb, .rpm) first, then re-run the tray.",
-            file=sys.stderr,
-        )
-        return 1
-
-    # pystray hides the PYSTRAY_BACKEND env var for Linux users; we don't
-    # force a choice here.  On KDE Plasma Wayland the appindicator
-    # backend maps 1:1 onto StatusNotifierItem so the icon appears
-    # without any extension.
     if "PYSTRAY_BACKEND" in os.environ:
         logger.info("tray backend override: %s", os.environ["PYSTRAY_BACKEND"])
 
-    logger.info("whyDPI tray starting — service currently %s",
-                "active" if state["running"] else "inactive")
+    logger.info(
+        "whyDPI tray starting (controller=%s) — service currently %s",
+        controller.name,
+        "active" if state["running"] else "inactive",
+    )
     icon.run(setup=setup)
     return 0
