@@ -68,14 +68,14 @@ jobs:
   #  Fedora  →  .rpm
   # --------------------------------------------------------------------------
   rpm:
-    name: Build .rpm (${{ matrix.image }})
+    name: Build .rpm (fedora:${{ matrix.fedora }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        image: ['fedora:41', 'fedora:40']
+        fedora: ['41', '40']
     container:
-      image: ${{ matrix.image }}
+      image: fedora:${{ matrix.fedora }}
     steps:
       - name: Install build dependencies
         run: |
@@ -92,7 +92,9 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: rpm-${{ matrix.image }}
+          # Artifact names must not contain ':', so we spell the matrix
+          # key as a plain Fedora version number.
+          name: rpm-fedora${{ matrix.fedora }}
           path: packaging/fedora/dist/*.rpm
           retention-days: 7
 
@@ -145,7 +147,11 @@ jobs:
         shell: pwsh
         working-directory: packaging\windows
         run: |
+          $ErrorActionPreference = 'Continue'
+          $log = "build\tray-build.log"
+          New-Item -ItemType Directory -Force -Path build | Out-Null
           pyinstaller --onefile --windowed --uac-admin `
+            --log-level=INFO `
             --icon="..\..\assets\favicon.ico" `
             --add-data "..\..\whydpi\ui\_assets;whydpi\ui\_assets" `
             --collect-all pydivert `
@@ -158,13 +164,23 @@ jobs:
             --distpath build\dist `
             --workpath build\work `
             --specpath build `
-            tray_entry.py
+            tray_entry.py 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          Write-Host ("---- tail of PyInstaller log (exit={0}) ----" -f $code)
+          if (Test-Path $log) { Get-Content $log -Tail 120 }
+          Write-Host "---- PyInstaller warn files (if any) ----"
+          Get-ChildItem build\work -Recurse -Filter "warn-*.txt" -ErrorAction SilentlyContinue | `
+            ForEach-Object { Write-Host "== $($_.FullName) =="; Get-Content $_.FullName -Tail 60 }
+          if ($code -ne 0) { throw "pyinstaller tray build failed (exit $code)" }
 
       - name: Build whydpi.exe
         shell: pwsh
         working-directory: packaging\windows
         run: |
+          $ErrorActionPreference = 'Continue'
+          $log = "build\cli-build.log"
           pyinstaller --onefile --console --uac-admin `
+            --log-level=INFO `
             --icon="..\..\assets\favicon.ico" `
             --collect-all pydivert `
             --hidden-import whydpi.platforms.windows `
@@ -174,7 +190,11 @@ jobs:
             --distpath build\dist `
             --workpath build\work `
             --specpath build `
-            cli_entry.py
+            cli_entry.py 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          Write-Host ("---- tail of PyInstaller log (exit={0}) ----" -f $code)
+          if (Test-Path $log) { Get-Content $log -Tail 80 }
+          if ($code -ne 0) { throw "pyinstaller cli build failed (exit $code)" }
 
       - name: Smoke-test the built executables
         shell: pwsh
