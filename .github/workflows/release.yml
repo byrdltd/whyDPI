@@ -273,12 +273,20 @@ jobs:
           Write-Host "=== iss references ==="
           Get-Content whydpi.iss | Select-String -Pattern '^Source:|^SetupIconFile|^LicenseFile'
 
-          & "$iscc" /V9 whydpi.iss
+          $isccLog = "build\iscc.log"
+          & "$iscc" /V9 whydpi.iss 2>&1 | Tee-Object -FilePath $isccLog
           $code = $LASTEXITCODE
           Write-Host "ISCC exit: $code"
           if ($code -ne 0) {
-            Write-Host "::error title=Inno Setup::ISCC failed with exit code $code"
-            throw "Inno Setup compilation failed"
+            Write-Host "---- ISCC output ----"
+            Get-Content $isccLog | ForEach-Object {
+              Write-Host $_
+              if ($_ -match '(^Error|Internal error|expected|unknown|cannot|invalid|not found)') {
+                $msg = $_ -replace '%','%25' -replace "`r",'' -replace "`n",'%0A'
+                Write-Host "::error title=Inno Setup::$msg"
+              }
+            }
+            throw "Inno Setup compilation failed (exit $code)"
           }
           Write-Host "=== dist/ after compile ==="
           Get-ChildItem dist -ErrorAction SilentlyContinue
