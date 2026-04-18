@@ -1,0 +1,39 @@
+Source: whydpi
+Section: net
+Priority: optional
+Maintainer: byrdltd <byrdltd@users.noreply.github.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-python,
+ dh-sequence-python3,
+ pybuild-plugin-pyproject,
+ python3-all,
+ python3-build,
+ python3-setuptools,
+ python3-wheel
+Standards-Version: 4.6.2
+Homepage: https://github.com/byrdltd/whyDPI
+Vcs-Git: https://github.com/byrdltd/whyDPI.git
+Vcs-Browser: https://github.com/byrdltd/whyDPI
+Rules-Requires-Root: no
+
+Package: whydpi
+Architecture: all
+Depends:
+ ${misc:Depends},
+ ${python3:Depends},
+ iptables,
+ python3 (>= 3.10)
+Description: Adaptive, per-SNI DPI bypass with TLS fragmentation
+ whyDPI is a transparent TLS proxy and DNS forwarder for research
+ environments.  It ships zero hard-coded hostnames: what works for a
+ given destination is discovered at runtime, cached per-SNI, and
+ refined when conditions change.
+ .
+ Key features:
+  * Runtime TLS fragmentation strategy discovery
+  * Per-SNI strategy cache on tmpfs (wiped on shutdown)
+  * Atomic netfilter (iptables/ip6tables) rules, IPv4 + IPv6
+  * DNS-over-HTTPS stub resolver
+ .
+ For educational and research purposes only.

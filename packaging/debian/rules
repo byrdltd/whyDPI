@@ -1,0 +1,20 @@
+#!/usr/bin/make -f
+# -*- makefile -*-
+
+export PYBUILD_NAME=whydpi
+
+%:
+	dh $@ --buildsystem=pybuild
+
+# dh_installsystemd looks for debian/<package>.service.  The upstream unit
+# file lives at the repository root (whydpi.service), shared with the AUR
+# PKGBUILDs and install.sh.  Copy it into debian/ just-in-time so we never
+# need to maintain two drifting copies.
+override_dh_installsystemd:
+	install -D -m 644 whydpi.service debian/whydpi.service
+	dh_installsystemd --no-enable --no-start
+
+# The systemd service is not enabled by default — let the user decide.
+override_dh_auto_clean:
+	dh_auto_clean
+	rm -f debian/whydpi.service

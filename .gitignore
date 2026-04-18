@@ -71,8 +71,12 @@ config.local.yml
 packaging/**/*.tar.gz
 packaging/**/*.tar.zst
 packaging/**/*.pkg.tar.*
+packaging/**/*.deb
+packaging/**/*.buildinfo
+packaging/**/*.changes
 packaging/**/src/
 packaging/**/pkg/
+packaging/**/dist/
 
 # Docs - keep legacy stuff private
 docs/

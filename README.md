@@ -54,6 +54,18 @@ paru -S whydpi           # stable
 sudo systemctl enable --now whydpi
 ```
 
+### Debian / Ubuntu (PPA — coming soon)
+
+```bash
+# Planned:
+# sudo add-apt-repository ppa:byrdltd/whydpi
+# sudo apt install whydpi
+```
+
+A tested Debian source package lives in `packaging/debian/`.  Until the
+PPA is live you can build your own `.deb` in a container —
+see `packaging/debian/README.md`.
+
 ### Any Linux (from source)
 
 ```bash
