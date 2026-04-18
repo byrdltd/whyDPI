@@ -41,6 +41,15 @@ A strategy is a tuple `(layer, offset)`:
 
 ## Installation
 
+### Arch Linux (AUR)
+
+```bash
+paru -S whydpi-git      # or: yay -S whydpi-git
+sudo systemctl enable --now whydpi
+```
+
+### Any Linux (from source)
+
 ```bash
 git clone https://github.com/byrdltd/whyDPI.git
 cd whyDPI
