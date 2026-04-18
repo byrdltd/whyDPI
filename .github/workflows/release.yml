@@ -150,10 +150,19 @@ jobs:
           $ErrorActionPreference = 'Continue'
           $log = "build\tray-build.log"
           New-Item -ItemType Directory -Force -Path build | Out-Null
+          # Use absolute paths for --add-data / --icon: PyInstaller's
+          # relative-path resolution behaved inconsistently against the
+          # pwsh working directory (only one ".." was consumed per call,
+          # so "..\..\whydpi" landed at packaging\whydpi).
+          $repo   = "${env:GITHUB_WORKSPACE}"
+          $assets = Join-Path $repo "whydpi\ui\_assets"
+          $icon   = Join-Path $repo "assets\favicon.ico"
+          Write-Host "assets src : $assets"
+          Write-Host "icon       : $icon"
           pyinstaller --onefile --windowed --uac-admin `
             --log-level=INFO `
-            --icon="..\..\assets\favicon.ico" `
-            --add-data "..\..\whydpi\ui\_assets;whydpi\ui\_assets" `
+            --icon="$icon" `
+            --add-data "${assets};whydpi/ui/_assets" `
             --collect-all pydivert `
             --collect-all pystray `
             --collect-all PIL `
@@ -209,9 +218,10 @@ jobs:
         run: |
           $ErrorActionPreference = 'Continue'
           $log = "build\cli-build.log"
+          $icon = Join-Path "${env:GITHUB_WORKSPACE}" "assets\favicon.ico"
           pyinstaller --onefile --console --uac-admin `
             --log-level=INFO `
-            --icon="..\..\assets\favicon.ico" `
+            --icon="$icon" `
             --collect-all pydivert `
             --hidden-import whydpi.platforms.windows `
             --hidden-import whydpi.system.windivert `
