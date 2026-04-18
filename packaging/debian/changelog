@@ -1,3 +1,11 @@
+whydpi (0.2.1-1) unstable; urgency=medium
+
+  * Release-tag bump only; no code changes from 0.2.0.  GitHub rejected
+    re-publishing the v0.2.0 release after the previous one was locked
+    as immutable, so the first publicly distributed tag is v0.2.1.
+
+ -- byrdltd <byrdltd@users.noreply.github.com>  Sat, 18 Apr 2026 06:00:00 +0000
+
 whydpi (0.2.0-1) unstable; urgency=medium
 
   * Initial Debian packaging.
