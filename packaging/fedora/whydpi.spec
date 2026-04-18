@@ -6,7 +6,7 @@
 %global pypi_name whydpi
 
 Name:           %{pypi_name}
-Version:        0.2.1
+Version:        0.2.2
 Release:        1%{?dist}
 Summary:        Adaptive, per-SNI DPI bypass with TLS fragmentation
 
@@ -67,6 +67,12 @@ install -D -m 644 whydpi.service %{buildroot}%{_unitdir}/whydpi.service
 %{_unitdir}/whydpi.service
 
 %changelog
+* Sat Apr 18 2026 byrdltd <byrdltd@users.noreply.github.com> - 0.2.2-1
+- Cross-platform tray (pystray) with polkit-escalated service control.
+- Windows port: WinDivert-based packet fragmenter + netsh DNS manager,
+  shipped as native .exe plus Scoop manifest.
+- Linux behaviour is byte-identical; no configuration migration.
+
 * Sat Apr 18 2026 byrdltd <byrdltd@users.noreply.github.com> - 0.2.1-1
 - Release-tag bump only; no code changes from 0.2.0.
 

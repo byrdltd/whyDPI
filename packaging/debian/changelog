@@ -1,3 +1,18 @@
+whydpi (0.2.2-1) unstable; urgency=medium
+
+  * Cross-platform tray: pystray-based system-tray icon for Linux
+    (KDE/GNOME via AppIndicator) with state polling, polkit-escalated
+    Start/Stop actions and state-dependent icon.
+  * Windows port: packet-level TLS fragmenter via WinDivert with per-SNI
+    strategy discovery that shares StrategyCache with the Linux engine;
+    per-adapter DNS manager via netsh with crash-safe backup/restore.
+    Ships as whydpi-tray.exe + whydpi.exe + a single Inno Setup
+    installer, plus a Scoop bucket manifest so Windows users can do
+    ``scoop install whydpi`` with zero account prompts.
+  * Linux behaviour is byte-identical; no migration, no config changes.
+
+ -- byrdltd <byrdltd@users.noreply.github.com>  Sat, 18 Apr 2026 07:45:00 +0000
+
 whydpi (0.2.1-1) unstable; urgency=medium
 
   * Release-tag bump only; no code changes from 0.2.0.  GitHub rejected

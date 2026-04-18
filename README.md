@@ -66,23 +66,28 @@ Binary `.deb` attached to each GitHub release (tested on Debian 12,
 Ubuntu 22.04 and Ubuntu 24.04).
 
 ```bash
-curl -LO https://github.com/byrdltd/whyDPI/releases/latest/download/whydpi_0.2.1-1_all.deb
-sudo apt install ./whydpi_0.2.1-1_all.deb
+# Download the latest release's .deb for your distro:
+curl -L -o whydpi.deb \
+  "https://github.com/byrdltd/whyDPI/releases/latest/download/whydpi_$(curl -s https://api.github.com/repos/byrdltd/whyDPI/releases/latest | grep tag_name | cut -d\" -f4 | sed s/^v//)-1_ubuntu24.04_all.deb"
+sudo apt install ./whydpi.deb
 sudo systemctl enable --now whydpi
 ```
 
-A future Launchpad PPA will bring `apt` auto-updates; until then pin the
-version you want from the [Releases page](https://github.com/byrdltd/whyDPI/releases).
+Available slugs on each release: `debian12`, `ubuntu24.04`, `ubuntu22.04`.
+A future Launchpad PPA will bring `apt` auto-updates.
 
 ### Fedora
 
+Grab the latest `.rpm` from the
+[Releases page](https://github.com/byrdltd/whyDPI/releases) (builds for
+Fedora 40 and 41 are attached), then:
+
 ```bash
-sudo dnf install https://github.com/byrdltd/whyDPI/releases/latest/download/whydpi-0.2.1-1.fc41.noarch.rpm
+sudo dnf install ./whydpi-*.noarch.rpm
 sudo systemctl enable --now whydpi
 ```
 
-Fedora 41 build is shipped; a future Fedora COPR repo will bring
-`dnf` auto-updates.
+A future Fedora COPR repo will bring `dnf` auto-updates.
 
 ### Any Linux (from source)
 

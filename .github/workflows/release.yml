@@ -163,14 +163,34 @@ jobs:
             --specpath build `
             cli_entry.py
 
-      - name: Smoke-test the built tray (version-only)
+      - name: Smoke-test the built executables
         shell: pwsh
         working-directory: packaging\windows\build\dist
         run: |
-          # Not elevated here; the tray must refuse cleanly rather than crash.
-          $out = & ".\whydpi-tray.exe" 2>&1
-          Write-Host "tray exit: $LASTEXITCODE"
-          Write-Host "tray output: $out"
+          # `whydpi.exe --help` is non-blocking (CLI parser + exit) so it
+          # gives us a real end-to-end PyInstaller bundle check: every
+          # hidden import we pinned (whydpi.platforms.windows, windivert,
+          # dns_windows) must import successfully or --help crashes.
+          $out = & ".\whydpi.exe" --help 2>&1
+          Write-Host "cli exit: $LASTEXITCODE"
+          Write-Host "cli output:`n$out"
+          if ($LASTEXITCODE -ne 0) { throw "whydpi.exe --help failed" }
+
+          # The tray's main loop is blocking by design (pystray.Icon.run),
+          # so we can't invoke it in CI.  Settle for proving the bundle is
+          # loadable by launching with a 5-second watchdog and killing it.
+          $p = Start-Process ".\whydpi-tray.exe" -PassThru
+          Start-Sleep -Seconds 5
+          if ($p.HasExited) {
+            # Exited early: acceptable only if it was the non-admin refusal.
+            Write-Host "tray exited with code $($p.ExitCode) within 5s"
+            if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3) {
+              throw "tray exe crashed unexpectedly (exit $($p.ExitCode))"
+            }
+          } else {
+            Write-Host "tray still running after 5s — bundle loads OK"
+            Stop-Process -Id $p.Id -Force
+          }
 
       - name: Compile Inno Setup installer
         shell: pwsh
