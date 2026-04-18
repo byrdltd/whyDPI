@@ -79,34 +79,56 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    # Phase 1 goal: verify that the whydpi package imports cleanly on
-    # Windows and that the platform dispatcher does the right thing.
-    # The Windows engine itself is intentionally a stub for now.
-    - name: Install package (no Windows extras yet — stubs only)
+    # Phase 2: import the full Windows stack (shaper, DNS manager, UI) and
+    # exercise the logic that does not require the WinDivert driver or
+    # administrative privileges — strategy remapping, netsh output parsing,
+    # packet-shaper construction.
+    - name: Install package with Windows extras
       run: |
         python -m pip install --upgrade pip
-        pip install -e .
+        pip install -e ".[windows]"
 
     - name: Import whydpi on Windows
       run: |
         python -c "import whydpi; print('version:', whydpi.__version__)"
         python -c "from whydpi.platforms import windows; print('windows backend imported')"
         python -c "from whydpi.system import windivert, dns_windows; print('windows system modules imported')"
-        python -c "from whydpi.ui import tray; print('tray stub imported')"
+        python -c "from whydpi.ui import tray; print('tray module imported')"
 
-    - name: Dispatcher must raise NotImplementedError (not crash)
+    - name: Sanity-check strategy remapping and netsh parser
       shell: python
       run: |
-        from whydpi.core import engine
-        from whydpi.settings import Settings
         import sys
-        try:
-            engine.run(Settings(), configure_resolver=False)
-        except NotImplementedError as e:
-            print('expected NotImplementedError:', e)
-            sys.exit(0)
-        print('ERROR: engine.run did not raise NotImplementedError on Windows')
-        sys.exit(1)
+        from whydpi.core.strategy import Strategy
+        from whydpi.system.windivert import _remap_for_packet_layer, PacketShaper
+        from whydpi.system.dns_windows import _parse_dns
+        from whydpi.core.cache import StrategyCache
+        import tempfile, pathlib
+
+        # record:* must demote to tcp:* so TCP sequence accounting stays intact
+        assert _remap_for_packet_layer(Strategy.parse("record:2")).layer == "tcp"
+        assert _remap_for_packet_layer(Strategy.parse("record:sni-mid")).layer == "tcp"
+        assert _remap_for_packet_layer(Strategy.parse("tcp:sni-mid")).layer == "tcp"
+
+        # PacketShaper can be constructed without opening the driver
+        with tempfile.TemporaryDirectory() as td:
+            cache = StrategyCache.load(pathlib.Path(td) / "s.json")
+            shaper = PacketShaper(
+                default_strategy=Strategy.parse("tcp:sni-mid"),
+                fallbacks=[Strategy.parse("chunked:40")],
+                cache=cache,
+            )
+            assert shaper._default.layer == "tcp"
+
+        # netsh output parser
+        servers, dhcp = _parse_dns(
+            "  Statically Configured DNS Servers:  192.0.2.1\n"
+            "    192.0.2.2\n"
+        )
+        assert servers == ["192.0.2.1", "192.0.2.2"], servers
+        assert dhcp is False
+
+        print("Windows smoke OK")
 
   security:
     name: Security Checks

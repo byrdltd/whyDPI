@@ -67,3 +67,9 @@ whydpi-tray = "whydpi.ui.tray:run"
 [tool.setuptools.packages.find]
 include = ["whydpi*"]
 exclude = ["tests*", "packaging*"]
+
+[tool.setuptools.package-data]
+# Ship the tray icon inside the wheel so ``importlib.resources`` can
+# find it regardless of whether the user installed via pip, AUR, .deb
+# or .rpm.
+"whydpi.ui" = ["_assets/*.png"]

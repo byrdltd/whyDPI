@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="assets/logo-256.png" alt="whyDPI logo" width="160" height="160">
+  <img src="assets/logo-wide.png" alt="whyDPI" width="720">
 </p>
-
-<h1 align="center">whyDPI</h1>
 
 <p align="center">
   <i>Educational DPI bypass tool for Linux research environments.</i>

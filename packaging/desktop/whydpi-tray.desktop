@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=whyDPI Tray
+GenericName=DPI Bypass Controller
+Comment=Start, stop and monitor the whyDPI service from the system tray
+Exec=whydpi-tray
+Icon=whydpi
+Terminal=false
+Categories=Network;Utility;
+Keywords=dpi;tls;bypass;network;proxy;
+StartupNotify=false
+# Uncomment to autostart at login:
+# X-GNOME-Autostart-enabled=true
