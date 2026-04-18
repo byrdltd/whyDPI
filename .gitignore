@@ -67,6 +67,13 @@ Thumbs.db
 *.pid
 config.local.yml
 
+# Packaging — build artifacts / downloaded sources
+packaging/**/*.tar.gz
+packaging/**/*.tar.zst
+packaging/**/*.pkg.tar.*
+packaging/**/src/
+packaging/**/pkg/
+
 # Docs - keep legacy stuff private
 docs/
 
