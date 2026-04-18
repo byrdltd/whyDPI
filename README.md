@@ -1,6 +1,13 @@
-# whyDPI
+<p align="center">
+  <img src="assets/logo-256.png" alt="whyDPI logo" width="160" height="160">
+</p>
 
-Educational DPI bypass tool for Linux research environments.
+<h1 align="center">whyDPI</h1>
+
+<p align="center">
+  <i>Educational DPI bypass tool for Linux research environments.</i>
+</p>
+
 
 whyDPI is a transparent TLS proxy and DNS forwarder.  It ships **zero
 hard-coded hostnames, domains or ISP-specific resolvers**: what works for a
