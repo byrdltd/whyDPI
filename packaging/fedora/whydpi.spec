@@ -62,6 +62,7 @@ install -D -m 644 whydpi.service %{buildroot}%{_unitdir}/whydpi.service
 %license LICENSE
 %doc README.md
 %{_bindir}/whydpi
+%{_bindir}/whydpi-tray
 %{python3_sitelib}/whydpi/
 %{python3_sitelib}/whydpi-%{version}.dist-info/
 %{_unitdir}/whydpi.service
