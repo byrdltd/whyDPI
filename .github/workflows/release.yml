@@ -259,8 +259,29 @@ jobs:
         env:
           WHYDPI_VERSION: ${{ steps.ver.outputs.version }}
         run: |
-          # ISCC ships with Inno Setup 6 preinstalled on windows-latest images.
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" whydpi.iss
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          Write-Host "ISCC path : $iscc"
+          Write-Host "ISCC exists: $(Test-Path $iscc)"
+          if (-not (Test-Path $iscc)) {
+            # Fall back to any other Inno Setup version preinstalled on
+            # the runner image.
+            $iscc = (Get-ChildItem "C:\Program Files (x86)\Inno Setup*\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+            Write-Host "fallback ISCC path: $iscc"
+          }
+          Write-Host "=== payload tree ==="
+          Get-ChildItem build\dist
+          Write-Host "=== iss references ==="
+          Get-Content whydpi.iss | Select-String -Pattern '^Source:|^SetupIconFile|^LicenseFile'
+
+          & "$iscc" /V9 whydpi.iss
+          $code = $LASTEXITCODE
+          Write-Host "ISCC exit: $code"
+          if ($code -ne 0) {
+            Write-Host "::error title=Inno Setup::ISCC failed with exit code $code"
+            throw "Inno Setup compilation failed"
+          }
+          Write-Host "=== dist/ after compile ==="
+          Get-ChildItem dist -ErrorAction SilentlyContinue
 
       - name: Collect artefacts
         shell: pwsh
