@@ -28,9 +28,27 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
 ]
 dependencies = [
     'tomli; python_version < "3.11"',
+]
+
+[project.optional-dependencies]
+# Windows runtime: packet capture + tray UI.  Installed automatically by
+# pip when a user runs ``pip install "whydpi[windows]"`` on Windows; the
+# marker keeps them out of the Linux install footprint.
+windows = [
+    'pydivert >= 3.0; sys_platform == "win32"',
+    'pystray >= 0.19; sys_platform == "win32"',
+    'Pillow  >= 10;   sys_platform == "win32"',
+]
+# Cross-platform tray on Linux (GNOME/KDE with AppIndicator) uses the
+# same extras; kept separate so Linux packagers can opt in without the
+# WinDivert pull-in.
+tray = [
+    'pystray >= 0.19',
+    'Pillow  >= 10',
 ]
 
 [project.urls]
@@ -40,6 +58,11 @@ Source = "https://github.com/byrdltd/whyDPI"
 
 [project.scripts]
 whydpi = "whydpi.cli:main"
+
+[project.gui-scripts]
+# Phase 3 target.  Registered now so the Windows PyInstaller build
+# (Phase 4) can already reference this entry point.
+whydpi-tray = "whydpi.ui.tray:run"
 
 [tool.setuptools.packages.find]
 include = ["whydpi*"]

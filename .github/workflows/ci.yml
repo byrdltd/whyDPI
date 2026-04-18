@@ -63,6 +63,51 @@ jobs:
         python -m pip install --upgrade pip
         pip install --dry-run -e .
 
+  windows-smoke:
+    name: Windows Import Smoke Test
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    # Phase 1 goal: verify that the whydpi package imports cleanly on
+    # Windows and that the platform dispatcher does the right thing.
+    # The Windows engine itself is intentionally a stub for now.
+    - name: Install package (no Windows extras yet — stubs only)
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+
+    - name: Import whydpi on Windows
+      run: |
+        python -c "import whydpi; print('version:', whydpi.__version__)"
+        python -c "from whydpi.platforms import windows; print('windows backend imported')"
+        python -c "from whydpi.system import windivert, dns_windows; print('windows system modules imported')"
+        python -c "from whydpi.ui import tray; print('tray stub imported')"
+
+    - name: Dispatcher must raise NotImplementedError (not crash)
+      shell: python
+      run: |
+        from whydpi.core import engine
+        from whydpi.settings import Settings
+        import sys
+        try:
+            engine.run(Settings(), configure_resolver=False)
+        except NotImplementedError as e:
+            print('expected NotImplementedError:', e)
+            sys.exit(0)
+        print('ERROR: engine.run did not raise NotImplementedError on Windows')
+        sys.exit(1)
+
   security:
     name: Security Checks
     runs-on: ubuntu-latest
