@@ -1,0 +1,56 @@
+name: Refresh release notes
+
+# Lightweight helper: rewrite the body of an existing GitHub Release
+# without rebuilding any artefacts. Run from the Actions tab when you
+# just need to polish the "which asset should I download?" table.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to refresh (e.g. v0.2.2)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    name: Rewrite release body
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rewrite notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          VER="${TAG#v}"
+
+          cat > /tmp/notes.md <<'EOF'
+          ## Which file should I download?
+
+          | If you run... | Grab this asset |
+          |---|---|
+          | **Windows 10 / 11** (normal user) | **`whydpi-VERSION-setup.exe`** — one-click installer with Start Menu shortcut, autostart and uninstaller |
+          | **Windows + Scoop / portable** | `whydpi-tray.exe` — standalone tray app (no installer) |
+          | **Arch / Manjaro / EndeavourOS** | `yay -S whydpi` (AUR) — do *not* download anything here |
+          | **Debian / Ubuntu / Mint** | `whydpi_VERSION-1_all.deb` |
+          | **Fedora / Nobara** | `whydpi-VERSION-1.fcXX.noarch.rpm` |
+          | **Other distros / source** | `Source code (tar.gz)` below |
+
+          > `whydpi.exe` is the command-line companion; the installer already
+          > ships it internally, so you only need it for advanced scripting.
+
+          ---
+
+          EOF
+          sed -i "s/VERSION/${VER}/g" /tmp/notes.md
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            --jq .body >> /tmp/notes.md || echo "(auto-notes unavailable)" >> /tmp/notes.md
+
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --notes-file /tmp/notes.md

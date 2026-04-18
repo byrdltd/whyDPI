@@ -345,19 +345,51 @@ jobs:
           echo "uploading ${#FILES[@]} file(s):"
           printf '  %s\n' "${FILES[@]}"
 
+          # Curated release notes so users can tell at a glance which asset
+          # to download. Auto-generated notes live below as a "What changed"
+          # appendix for maintainers.
+          cat > /tmp/notes.md <<'EOF'
+          ## Which file should I download?
+
+          | If you run... | Grab this asset |
+          |---|---|
+          | **Windows 10 / 11** (normal user) | **`whydpi-VERSION-setup.exe`** — one-click installer with Start Menu shortcut, autostart and uninstaller |
+          | **Windows + Scoop / portable** | `whydpi-tray.exe` — standalone tray app (no installer) |
+          | **Arch / Manjaro / EndeavourOS** | `yay -S whydpi` (AUR) — do *not* download anything here |
+          | **Debian / Ubuntu / Mint** | `whydpi_VERSION-1_all.deb` |
+          | **Fedora / Nobara** | `whydpi-VERSION-1.fcXX.noarch.rpm` |
+          | **Other distros / source** | [`Source code (tar.gz)`](#) below |
+
+          > `whydpi.exe` is the command-line companion; the installer already
+          > ships it internally, so you only need it for advanced scripting.
+
+          ---
+
+          EOF
+          # Replace the literal VERSION token with the actual tag (minus leading v)
+          VER="${TAG#v}"
+          sed -i "s/VERSION/${VER}/g" /tmp/notes.md
+
+          # Append auto-generated changelog to the curated header.
+          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            --jq .body >> /tmp/notes.md || echo "(auto-notes unavailable)" >> /tmp/notes.md
+
           # --repo is required because this job doesn't check the repo
           # out — gh falls back to local git context otherwise and dies
           # with "not a git repository".
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "release $TAG already exists — uploading assets (overwrite)"
+            echo "release $TAG already exists — uploading assets + refreshing notes"
             gh release upload "$TAG" "${FILES[@]}" --repo "$GITHUB_REPOSITORY" --clobber
             rc=$?
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --notes-file /tmp/notes.md || true
           else
             echo "creating release $TAG"
             gh release create "$TAG" "${FILES[@]}" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$TAG" \
-              --generate-notes 2>&1 | tee /tmp/ghcreate.log
+              --notes-file /tmp/notes.md 2>&1 | tee /tmp/ghcreate.log
             rc=${PIPESTATUS[0]}
             if [ "$rc" -ne 0 ]; then
               while IFS= read -r line; do
