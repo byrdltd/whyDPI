@@ -7,7 +7,7 @@
 - Requires root privileges for packet manipulation
 - Modifies system network configuration (DNS, iptables, NetworkManager)
 - Manipulates network traffic at the packet level
-- Is intended for educational, research, and personal network freedom purposes only
+- Is intended for educational and authorized research use only
 
 **Use responsibly and in compliance with local laws and regulations.**
 
@@ -48,7 +48,7 @@ This allows us to discuss and fix the issue privately before public disclosure.
   - Insecure file permissions
 
 - **Dependency vulnerabilities**
-  - Known CVEs in NetfilterQueue or scapy
+  - Known CVEs in declared runtime dependencies
   - Insecure dependency usage patterns
 
 - **Information disclosure**
@@ -64,10 +64,10 @@ This allows us to discuss and fix the issue privately before public disclosure.
   - "Uses third-party DNS" - This is user-configurable behavior
 
 - **Legal/Compliance issues**
-  - ISP terms of service violations
-  - Local law compliance
-  - Network policy violations
-  - Ethical concerns about bypassing restrictions
+  - ISP terms of service disputes
+  - Local law compliance questions
+  - Organizational network policy disputes
+  - Ethics debates about the tool’s stated purpose (not a product defect)
 
 - **Misuse scenarios**
   - User modifications for malicious purposes

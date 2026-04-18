@@ -50,21 +50,18 @@ echo ""
 echo "📥 Installing system dependencies..."
 
 if [ "$PKG_MANAGER" = "pacman" ]; then
-    # Arch Linux: Check if iptables OR iptables-nft is already installed
-    # Both packages provide /usr/bin/iptables but conflict with each other
+    # Arch Linux: Check if iptables OR iptables-nft is already installed.
     if pacman -Qi iptables &>/dev/null || pacman -Qi iptables-nft &>/dev/null; then
-        # iptables already installed (either legacy or nft), skip it
         echo "ℹ️  iptables already installed, skipping..."
-        $INSTALL_CMD python python-pip libnetfilter_queue
+        $INSTALL_CMD python python-pip
     else
-        # No iptables package, install iptables-nft (modern nftables backend)
         echo "ℹ️  Installing iptables-nft (modern nftables backend)..."
-        $INSTALL_CMD python python-pip libnetfilter_queue iptables-nft
+        $INSTALL_CMD python python-pip iptables-nft
     fi
 elif [ "$PKG_MANAGER" = "apt" ]; then
-    $INSTALL_CMD python3 python3-pip libnetfilter-queue1 iptables
+    $INSTALL_CMD python3 python3-pip iptables
 elif [ "$PKG_MANAGER" = "dnf" ]; then
-    $INSTALL_CMD python3 python3-pip libnetfilter_queue iptables
+    $INSTALL_CMD python3 python3-pip iptables
 fi
 
 echo "✅ System dependencies installed"
@@ -119,11 +116,12 @@ echo "✅ Installation Complete!"
 echo "=============================================="
 echo ""
 echo "Usage:"
-echo "  sudo whydpi start                # Start whyDPI"
-echo "  sudo whydpi start --configure-dns # Start with DNS config"
-echo "  sudo whydpi stop                 # Stop whyDPI"
-echo "  sudo whydpi dns-configure        # Configure DNS only"
-echo "  sudo whydpi dns-restore          # Restore original DNS"
+echo "  sudo whydpi start --configure-dns"
+echo "  sudo whydpi stop"
+echo "  sudo whydpi probe example.org example.net"
+echo "  sudo whydpi cache list"
+echo "  sudo whydpi dns-configure"
+echo "  sudo whydpi dns-restore"
 echo ""
 echo "⚠️  Remember: For educational and research purposes only!"
 echo ""

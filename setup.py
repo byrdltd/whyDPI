@@ -13,7 +13,7 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 setup(
     name="whydpi",
-    version="0.1.0",
+    version="0.2.0",
     author="whyDPI Contributors",
     description="Educational DPI bypass tool for research purposes",
     long_description=long_description,
@@ -36,14 +36,13 @@ setup(
         "Programming Language :: Python :: 3.11",
         "Operating System :: POSIX :: Linux",
     ],
-    python_requires=">=3.8",
+    python_requires=">=3.10",
     install_requires=[
-        "NetfilterQueue~=1.1.0",
-        "scapy>=2.5.0,<3.0.0",
+        'tomli; python_version < "3.11"',
     ],
     entry_points={
         "console_scripts": [
-            "whydpi=whydpi.__main__:main",
+            "whydpi=whydpi.cli:main",
         ],
     },
 )

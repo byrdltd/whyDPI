@@ -5,13 +5,13 @@ Wants=network-online.target NetworkManager-wait-online.service
 
 [Service]
 Type=simple
+Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 -m whydpi start --configure-dns
 ExecStop=/usr/bin/python3 -m whydpi stop
 Restart=on-failure
 RestartSec=5
 User=root
 
-# Security
 PrivateTmp=yes
 NoNewPrivileges=false
 ProtectSystem=false

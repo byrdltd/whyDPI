@@ -1,118 +1,45 @@
-<div align="center">
-  <img src="logo.png" alt="whyDPI Logo" width="500">
+# whyDPI
 
-  <h1>whyDPI</h1>
+Educational DPI bypass tool for Linux research environments.
 
-  <p><strong>Educational DPI Bypass Tool for Research Purposes</strong></p>
+whyDPI is a transparent TLS proxy and DNS forwarder.  It ships **zero
+hard-coded hostnames, domains or ISP-specific resolvers**: what works for a
+given destination is discovered at runtime, cached per-SNI, and refined when
+conditions change.
 
-  <p>
-    <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
-    <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.8+-blue.svg" alt="Python 3.8+"></a>
-    <a href="https://archlinux.org/"><img src="https://img.shields.io/badge/platform-Arch%20Linux-1793D1.svg" alt="Platform"></a>
-    <a href="https://github.com/byrdltd/whyDPI"><img src="https://img.shields.io/badge/tested%20on-Arch%20%2F%20CachyOS-success" alt="Tested"></a>
-  </p>
-</div>
+## How it works
 
----
+1. **Netfilter hijack** — iptables/ip6tables REDIRECT sends outbound
+   TCP/443 to a local transparent proxy.  A small set of rules also blocks
+   QUIC (UDP/443) so browsers fall back to TCP, and (optionally) redirects
+   UDP+TCP/53 to a local DoH stub resolver.
+2. **ClientHello shaping** — the proxy parses the ClientHello, identifies
+   the SNI, then applies a fragmentation *strategy* before forwarding the
+   bytes upstream.
+3. **Adaptive discovery** — for each SNI, the proxy tries the cached
+   winning strategy first, then the configured default, then a list of
+   fallbacks.  A strategy is considered successful only when the upstream
+   reply starts with a valid TLS handshake record (`content-type 0x16`);
+   HTTP block pages (`H…`) and injected RSTs are ignored.  The winning
+   strategy is persisted to `~/.cache/whydpi/strategies.json`.
+4. **DoH forwarding** — the optional DNS stub forwards every query as a
+   DoH POST to a user-configured resolver IP.  The DoH connection itself
+   transits the TLS proxy, so DNS traffic inherits the same fragmentation.
 
-## ⚠️ DISCLAIMER
+## Strategies
 
-**FOR EDUCATIONAL AND RESEARCH PURPOSES ONLY**
+A strategy is a tuple `(layer, offset)`:
 
-This tool is provided for educational purposes and network security research only. Users are solely responsible for compliance with all applicable laws and regulations in their jurisdiction.
-
-- ⚠️ Bypassing network restrictions may violate terms of service or local laws
-- ⚠️ The developers and contributors assume **NO LIABILITY** for any misuse
-- ⚠️ Use at your own risk and responsibility
-- ⚠️ This tool is provided "AS IS" without warranty of any kind
-
-**By using this software, you acknowledge that you have read this disclaimer and agree to use it responsibly and legally.**
-
----
-
-## ⚡ Quick Start
-
-**TL;DR:** Install and run whyDPI in 3 commands (requires Linux and root access):
-
-```bash
-# 1. Clone the repository
-git clone https://github.com/byrdltd/whyDPI.git
-cd whyDPI
-
-# 2. Run the installation script (interactive)
-sudo bash install.sh
-
-# 3. Start whyDPI
-sudo whydpi start
-```
-
-**That's it!** whyDPI is now bypassing DPI restrictions. To stop:
-
-```bash
-sudo whydpi stop
-```
-
-**Need more control?** See [Installation](#installation) and [Usage](#usage) sections below.
-
----
-
-## What is whyDPI?
-
-whyDPI is a minimal, educational tool for understanding Deep Packet Inspection (DPI) bypass techniques used by network security researchers and privacy advocates.
-
-### How it works
-
-whyDPI uses **Random Garbage Fake Packet Injection** - a simple yet effective technique against DPI systems.
-
-1. **DNS Bypass**: Configures Yandex DNS (77.88.8.8) to avoid DNS hijacking
-2. **Packet Interception**: Intercepts outgoing HTTPS/HTTP packets via Linux NFQUEUE
-3. **Random Garbage Injection**: Generates 500 bytes of random data and sends with TTL=3
-4. **Real Packet Release**: Releases the full real packet normally
-
-```
-[Browser] → [iptables NFQUEUE] → [whyDPI]
-                                    ├─ Inject random garbage (500 bytes, TTL=3, SAME SEQ)
-                                    └─ Release real packet (SAME SEQ)
-              ↓
-         [DPI sees garbage first, gets confused]
-              ↓
-         [Garbage expires after 3 hops]
-              ↓
-         [Real packet passes through confused DPI]
-              ↓
-         [Server sees both, ignores garbage, accepts real]
-```
-
-**Why this works:**
-- Every packet contains unique random data (`os.urandom()` - cryptographically secure)
-- DPI cannot build signatures (all packets different)
-- DPI sees garbage first → pattern matching fails → confusion
-- Server receives both but ignores garbage (duplicate SEQ number)
-- Simple, effective, 100% independent implementation
-
-### Key Features
-
-- ✅ **Pure Python**: 100% Python implementation, zero binary dependencies
-- ✅ **Minimal**: Clean, well-structured code (~600 lines)
-- ✅ **Transparent**: No proxy configuration needed
-- ✅ **Educational**: Well-commented code for learning
-- ✅ **Robust DNS**: Auto-configures DNS bypass (masks systemd-resolved, configures NetworkManager)
-- ✅ **Configurable**: Adjust TTL, ports, queue number
-- ✅ **Systemd**: Optional daemon mode
-
----
+| Spec | Meaning |
+| --- | --- |
+| `record:N`       | Re-frame the ClientHello as two TLS records, split at payload byte N |
+| `record:sni-mid` | Same, but split in the middle of the SNI extension |
+| `record:half`    | Same, split at the payload midpoint |
+| `tcp:sni-mid`    | Keep one TLS record, split the TCP send at the SNI midpoint |
+| `chunked:N`      | Split the raw bytes into N-byte TCP chunks |
+| `passthrough`    | Forward unchanged (used automatically for SNIs that break under any strategy) |
 
 ## Installation
-
-### Prerequisites
-
-- **Linux** (✅ **tested and working on Arch Linux / CachyOS**)
-  - ⚠️ **Other distros**: Untested but should work (Debian, Ubuntu, Fedora, etc.)
-  - ⚠️ Community testing and feedback welcome!
-- **Python 3.8+**
-- **Root access** (required for iptables and raw sockets)
-
-### Quick Install
 
 ```bash
 git clone https://github.com/byrdltd/whyDPI.git
@@ -120,359 +47,74 @@ cd whyDPI
 sudo ./install.sh
 ```
 
-**During installation:**
-- When asked "install systemd service?", choose **Yes (y)** to enable auto-start at boot
-- When asked "Start whyDPI now?", choose **Yes (y)** to start immediately
-- ✅ whyDPI will automatically start on every reboot
+## Configuration
 
-### Manual Install
+whyDPI reads `~/.config/whydpi/config.toml` at startup.  All values are
+optional; env vars (`WHYDPI_*`) and CLI flags override the file.  A fully
+explicit example:
 
-```bash
-# Install system dependencies
-# ✅ Arch/CachyOS (TESTED):
-sudo pacman -S python python-pip libnetfilter_queue iptables-nft
+```toml
+[dns]
+mode = "doh"            # "doh" | "altport" | "off"
+doh_endpoint_ip = "1.1.1.1"
+doh_endpoint_path = "/dns-query"
+doh_fallback_ip = "9.9.9.9"
+stub_address = "127.0.0.53"
 
-# ⚠️ Debian/Ubuntu (UNTESTED - community feedback welcome):
-sudo apt install python3 python3-pip libnetfilter-queue1 iptables
+[tls]
+default_strategy = "record:2"
+fallback_strategies = [
+    "record:2", "record:1", "record:sni-mid",
+    "tcp:sni-mid", "record:half", "chunked:40",
+]
+probe_timeout_s = 3.0
+success_min_bytes = 6
 
-# ⚠️ Fedora (UNTESTED - community feedback welcome):
-sudo dnf install python3 python3-pip libnetfilter_queue iptables
-
-# Install Python dependencies (Arch users add --break-system-packages)
-pip3 install -r requirements.txt
-
-# Install whyDPI (Arch users add --break-system-packages)
-pip3 install -e .
+[net]
+ipv6_enabled = true
+block_quic = true
 ```
 
----
-
-## Usage
-
-### Basic Usage
+## Commands
 
 ```bash
-# Start whyDPI with automatic DNS configuration
+# start (optionally pin /etc/resolv.conf to the stub)
 sudo whydpi start --configure-dns
 
-# Start whyDPI (without DNS configuration)
-sudo whydpi start
-
-# Stop whyDPI
+# stop and remove rules
 sudo whydpi stop
-```
 
-### Advanced Usage
+# inspect the per-SNI strategy cache
+sudo whydpi cache list
+sudo whydpi cache clear
+sudo whydpi cache forget example.org
 
-```bash
-# Custom TTL (default: 3)
-sudo whydpi start --ttl 5
+# stand-alone diagnostic: report the strategy each target needs
+sudo whydpi probe example.org example.net
 
-# Custom ports (default: 80, 443)
-sudo whydpi start --ports 80 443 8080
-
-# Custom NFQUEUE number (default: 200)
-sudo whydpi start --queue 100
-
-# Verbose logging
-sudo whydpi start -v
-```
-
-### DNS Management
-
-```bash
-# Configure Yandex DNS
+# DNS resolver
 sudo whydpi dns-configure
-
-# Restore original DNS
 sudo whydpi dns-restore
 ```
 
-### Systemd Service (Auto-Start at Boot)
-
-**If you installed via `install.sh` and chose "Yes" for systemd service:**
-- ✅ whyDPI is **automatically enabled at boot**
-- ✅ whyDPI will start on every reboot
-- ✅ No manual intervention needed
-
-**Manual Installation (if skipped during install.sh):**
-
-```bash
-# Copy service file
-sudo cp whydpi.service /etc/systemd/system/
-sudo systemctl daemon-reload
-
-# Enable at boot (IMPORTANT!)
-sudo systemctl enable whydpi
-
-# Start now
-sudo systemctl start whydpi
-```
-
-**Service Management:**
-
-```bash
-# Check status
-sudo systemctl status whydpi
-
-# View logs
-sudo journalctl -u whydpi -f
-
-# Restart
-sudo systemctl restart whydpi
-
-# Disable auto-start at boot
-sudo systemctl disable whydpi
-
-# Stop service
-sudo systemctl stop whydpi
-```
-
----
-
-## Testing
-
-Test with websites that may be subject to DPI inspection in your region:
-
-```bash
-# Start whyDPI
-sudo whydpi start --configure-dns
-
-# Test in browser
-# - https://example.com
-# - Other sites as appropriate for your research
-```
-
-**Note:** Test responsibly and only on networks you own or have permission to test.
-
----
-
-## How It Works (Technical)
-
-### 1. DNS Bypass
-
-ISPs may hijack DNS queries and return fake IPs for blocked sites.
-
-**Solution:** Use alternative DNS (Yandex 77.88.8.8) to get real IPs.
-
-whyDPI automatically:
-- Stops and masks `systemd-resolved` (prevents auto-restart)
-- Removes symlinks and creates immutable `/etc/resolv.conf`
-- Configures NetworkManager connections with Yandex DNS
-- Makes DNS configuration persistent across reboots
-
-```
-User → Yandex DNS (77.88.8.8) → Real IP
-     ✓ Bypasses ISP DNS hijacking
-     ✓ Prevents systemd-resolved override
-     ✓ Survives NetworkManager changes
-```
-
-### 2. DPI Bypass - Random Garbage Injection
-
-ISPs use Deep Packet Inspection to analyze HTTPS traffic (SNI in TLS handshake).
-
-**Solution:** Inject random garbage packets with TTL=3 to confuse DPI:
-
-```
-1. Browser sends: [Real TLS ClientHello with SNI: example.com]
-2. whyDPI captures it via NFQUEUE
-3. whyDPI generates: 500 bytes of random garbage (os.urandom - cryptographically secure)
-4. whyDPI injects: Garbage packet with TTL=3, SAME SEQ as real packet
-5. whyDPI releases: Full REAL packet (also with SAME SEQ)
-6. DPI sees: Random garbage first → pattern matching fails → confused state
-7. Garbage packet: Dies after 3 hops (never reaches server)
-8. Real packet: Passes through confused DPI → connection succeeds
-9. Server: Sees both packets with duplicate SEQ → ignores garbage → accepts real
-```
-
-**Why Random Garbage Injection works:**
-- Every packet contains unique random data (DPI can't build signatures)
-- Simple and effective against most DPI systems
-- Low overhead - only 500 bytes per connection
-- Exploits DPI's limited state tracking capabilities
-- 100% independent implementation using Python's os.urandom()
-
-### 3. iptables NFQUEUE
-
-```
-                 ┌──────────────┐
-                 │   Browser    │
-                 └──────┬───────┘
-                        │ HTTPS (443)
-                        ▼
-                 ┌──────────────┐
-                 │  iptables    │
-                 │   POSTROUTING│
-                 └──────┬───────┘
-                        │ NFQUEUE
-                        ▼
-                 ┌──────────────┐
-                 │    whyDPI    │ ← Injects fake packet
-                 └──────┬───────┘
-                        │ Real + Fake packets
-                        ▼
-                 ┌──────────────┐
-                 │   Network    │
-                 └──────────────┘
-```
-
----
-
-## Parameters Explained
-
-```bash
-whydpi start --queue 200 --ttl 3 --ports 80 443
-```
-
-- `--queue 200` - NFQUEUE number (must match iptables rule)
-- `--ttl 3` - TTL of fake packet (dies after 3 hops)
-- `--ports 80 443` - Ports to intercept (HTTP, HTTPS)
-
-**Why TTL=3?**
-- Too low (1-2): May not reach ISP's DPI
-- Too high (>5): May reach destination server, causing issues
-- **TTL=3**: Perfect balance - reaches DPI but not server
-
----
-
-## Project Structure
-
-```
-whyDPI/
-├── whydpi/
-│   ├── __init__.py        # Package initialization
-│   ├── __main__.py        # CLI entry point
-│   ├── config.py          # Configuration and fake packets
-│   ├── dns_config.py      # DNS configuration helper
-│   ├── nfqueue_handler.py # Packet interception logic
-│   └── packet_injector.py # Fake packet injection
-├── install.sh             # Installation script
-├── setup.py               # Python package setup
-├── requirements.txt       # Python dependencies
-├── whydpi.service         # Systemd service file
-├── LICENSE                # MIT License + disclaimers
-└── README.md              # This file
-```
-
----
-
-## Troubleshooting
-
-### "Permission denied" errors
-
-Make sure you're running as root:
-```bash
-sudo whydpi start
-```
-
-### DNS not working after restore
-
-```bash
-sudo chattr -i /etc/resolv.conf
-sudo systemctl restart NetworkManager  # or systemd-resolved
-```
-
-### whyDPI not starting
-
-```bash
-# Check logs
-sudo whydpi start -v
-
-# Check if ports are correct
-sudo iptables -t mangle -L POSTROUTING -v -n
-
-# Check if nfqueue is working
-lsmod | grep nfnetlink
-```
-
-### Still can't access blocked sites
-
-1. **Verify DNS is configured**:
-   ```bash
-   cat /etc/resolv.conf  # Should show: nameserver 77.88.8.8
-   getent ahosts example.com  # Should show real IPs, NOT ISP fake IPs
-   ```
-
-2. **Check systemd-resolved status**:
-   ```bash
-   systemctl status systemd-resolved  # Should be: inactive (dead), masked
-   ```
-
-3. **Clear browser DNS cache**: Restart browser or use incognito mode
-
-4. **Try different TTL values**: `sudo whydpi start --ttl 2` or `--ttl 5`
-
-5. Some ISPs use multiple DPI systems - whyDPI may not work in all cases
-
----
-
-## Uninstall
-
-```bash
-# Stop service
-sudo systemctl stop whydpi
-sudo systemctl disable whydpi
-
-# Remove systemd service
-sudo rm /etc/systemd/system/whydpi.service
-sudo systemctl daemon-reload
-
-# Restore DNS
-sudo whydpi dns-restore
-
-# Uninstall Python package
-pip3 uninstall whydpi
-
-# Remove iptables rules
-sudo whydpi stop
-```
-
----
-
-## Contributing
-
-Contributions are welcome! This is an educational project, so:
-
-- ✅ Bug fixes and improvements
-- ✅ Documentation improvements
-- ✅ Additional bypass techniques (with research references)
-- ✅ Support for more platforms
-
-**Note:** All contributions must maintain the educational nature and include appropriate disclaimers.
-
----
-
-## License
-
-MIT License - See [LICENSE](LICENSE) file for details.
-
-This software is provided "AS IS" without warranty of any kind.
-
----
-
-## FAQ
-
-**Q: Will this slow down my internet?**
-A: No significant impact. whyDPI only processes first few packets of each connection.
-
-**Q: Does this work on other distros?**
-A: **Tested and confirmed working on Arch Linux / CachyOS.** Should work on any Linux with iptables/systemd (Debian, Ubuntu, Fedora, etc.), but these are untested. Community testing and feedback highly appreciated!
-
-**Q: Can I use this with VPN/Tor?**
-A: whyDPI is not a VPN. It can be used alongside VPN for additional privacy, but it's designed for direct connections.
-
-**Q: What if my ISP updates their DPI?**
-A: DPI systems evolve. You may need to adjust parameters (TTL, etc.) or try different techniques.
-
-**Q: Is this legal?**
-A: This tool is for educational research. Users must comply with local laws. We assume no liability for misuse.
-
----
-
-**Last Updated:** October 19, 2025
-**Version:** 0.1.0
-**Status:** Alpha - Educational Release
-
----
-
+## System requirements
+
+- Linux
+- Python 3.10+ (`tomllib`; on 3.10 install `tomli` via `requirements.txt`)
+- `iptables` or `iptables-nft` (IPv6 rules need `ip6tables`)
+- Root privileges
+
+## Notes
+
+- No hostnames are shipped in code.  The DoH endpoint is an IP.  The SNI
+  cache only contains hosts *you* have visited.
+- A success in `whydpi probe` means the upstream produced a valid TLS
+  handshake reply — not an HTTP 200.  Middlebox block pages and RSTs are
+  rejected explicitly.
+- IPv6 HTTPS is fully proxied (unlike v0.1.0 which blocked it).  Disable
+  with `net.ipv6_enabled = false` if the upstream breaks IPv6.
+
+## Disclaimer
+
+For educational and research purposes only.  Use only where you are
+authorized to test, and comply with applicable laws and network policies.
