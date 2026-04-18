@@ -26,6 +26,8 @@ share/python-wheels/
 # PyInstaller
 *.manifest
 *.spec
+# ...but not our RPM spec under packaging/
+!packaging/**/*.spec
 
 # Installer logs
 pip-log.txt
