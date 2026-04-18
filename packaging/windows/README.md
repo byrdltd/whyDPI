@@ -35,7 +35,7 @@ From a Developer PowerShell with Python 3.11+ and Inno Setup 6 installed:
 
 ```powershell
 # Set the version the installer stamps everywhere.
-$env:WHYDPI_VERSION = "0.2.2"
+$env:WHYDPI_VERSION = "0.2.3"
 
 # Build the two exes into packaging\windows\build\dist\
 pyinstaller --onefile --windowed --uac-admin `

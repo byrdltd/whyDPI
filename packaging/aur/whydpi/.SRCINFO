@@ -1,6 +1,6 @@
 pkgbase = whydpi
 	pkgdesc = Adaptive, per-SNI DPI bypass that learns optimal TLS fragmentation per host
-	pkgver = 0.2.2
+	pkgver = 0.2.3
 	pkgrel = 1
 	url = https://github.com/byrdltd/whyDPI
 	arch = any
@@ -13,7 +13,7 @@ pkgbase = whydpi
 	depends = iptables
 	optdepends = systemd: run whydpi as a service at boot
 	conflicts = whydpi-git
-	source = whydpi-0.2.2.tar.gz::https://github.com/byrdltd/whyDPI/archive/v0.2.2.tar.gz
+	source = whydpi-0.2.3.tar.gz::https://github.com/byrdltd/whyDPI/archive/v0.2.3.tar.gz
 	sha256sums = SKIP
 
 pkgname = whydpi

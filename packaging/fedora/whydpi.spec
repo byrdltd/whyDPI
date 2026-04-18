@@ -6,7 +6,7 @@
 %global pypi_name whydpi
 
 Name:           %{pypi_name}
-Version:        0.2.2
+Version:        0.2.3
 Release:        1%{?dist}
 Summary:        Adaptive, per-SNI DPI bypass with TLS fragmentation
 
@@ -68,6 +68,12 @@ install -D -m 644 whydpi.service %{buildroot}%{_unitdir}/whydpi.service
 %{_unitdir}/whydpi.service
 
 %changelog
+* Sat Apr 18 2026 byrdltd <byrdltd@users.noreply.github.com> - 0.2.3-1
+- Windows installer fixes: shellexec flag for UAC-elevated post-install
+  launch (fixes CreateProcess error 740), and whydpi.ui.tray / whydpi.cli
+  are now correctly bundled into the PyInstaller onefile exes.
+- Linux RPM is functionally identical to 0.2.2.
+
 * Sat Apr 18 2026 byrdltd <byrdltd@users.noreply.github.com> - 0.2.2-1
 - Cross-platform tray (pystray) with polkit-escalated service control.
 - Windows port: WinDivert-based packet fragmenter + netsh DNS manager,

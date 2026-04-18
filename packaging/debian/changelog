@@ -1,3 +1,13 @@
+whydpi (0.2.3-1) unstable; urgency=medium
+
+  * Windows installer fixes: shellexec flag for post-install launch
+    (fixes CreateProcess error 740 on "Finish") and the uninstaller's
+    DNS-restore hook; whydpi.ui.tray / whydpi.cli are now correctly
+    bundled into the PyInstaller onefile executables.
+  * Linux .deb is functionally identical to 0.2.2.
+
+ -- byrdltd <byrdltd@users.noreply.github.com>  Sat, 18 Apr 2026 09:00:00 +0000
+
 whydpi (0.2.2-1) unstable; urgency=medium
 
   * Cross-platform tray: pystray-based system-tray icon for Linux

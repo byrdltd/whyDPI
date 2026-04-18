@@ -71,12 +71,19 @@ Name: "{commondesktop}\{#MyAppName}";    Filename: "{app}\{#MyExeTray}"; IconFil
 ; request elevation, resulting in a blocked UAC popup on every login).
 Filename: "schtasks.exe"; Parameters: "/Create /F /SC ONLOGON /RL HIGHEST /TN ""whyDPI Tray"" /TR ""\""{app}\{#MyExeTray}\"""""; Flags: runhidden; Tasks: autostart; StatusMsg: "Registering autostart task..."
 
-; Offer to launch the tray immediately on "Finish".
-Filename: "{app}\{#MyExeTray}"; Description: "Launch whyDPI"; Flags: nowait postinstall skipifsilent
+; Offer to launch the tray immediately on "Finish".  We must use
+; shellexec here: the tray exe ships with a requireAdministrator UAC
+; manifest and plain CreateProcess refuses to start such binaries
+; with ERROR_ELEVATION_REQUIRED (740) even from an elevated installer.
+; ShellExecuteEx respects the UAC manifest and reuses the installer's
+; elevated token, so no extra prompt is shown.
+Filename: "{app}\{#MyExeTray}"; Description: "Launch whyDPI"; Flags: shellexec nowait postinstall skipifsilent
 
 [UninstallRun]
 ; Remove the autostart task (ignore failure — user may have deleted it manually).
 Filename: "schtasks.exe"; Parameters: "/Delete /F /TN ""whyDPI Tray"""; Flags: runhidden
 
 ; Restore DNS in case the user uninstalls while the tray is running.
-Filename: "{app}\{#MyExeCli}"; Parameters: "stop"; Flags: runhidden
+; Same shellexec reasoning as above — the CLI exe also carries the
+; requireAdministrator manifest.
+Filename: "{app}\{#MyExeCli}"; Parameters: "stop"; Flags: shellexec runhidden

@@ -116,7 +116,14 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[windows]"
+          # NOTE: non-editable install on purpose.  PyInstaller's static
+          # module graph does not reliably follow `pip install -e` (the
+          # package lives behind a .pth file, not as a real directory in
+          # site-packages), which silently produced exes that raised
+          # `ModuleNotFoundError: whydpi.ui.tray` at startup on end-user
+          # machines.  A regular install drops the tree into site-packages
+          # where PyInstaller's collector can see every submodule.
+          pip install ".[windows]"
           pip install pyinstaller
 
       - name: Derive version
@@ -163,12 +170,15 @@ jobs:
             --log-level=INFO `
             --icon="$icon" `
             --add-data "${assets};whydpi/ui/_assets" `
+            --collect-all whydpi `
             --collect-all pydivert `
             --collect-all pystray `
             --collect-all PIL `
+            --copy-metadata whydpi `
             --hidden-import whydpi.platforms.windows `
             --hidden-import whydpi.system.windivert `
             --hidden-import whydpi.system.dns_windows `
+            --hidden-import whydpi.ui.tray `
             --name whydpi-tray `
             --distpath build\dist `
             --workpath build\work `
@@ -222,10 +232,13 @@ jobs:
           pyinstaller --onefile --console --uac-admin `
             --log-level=INFO `
             --icon="$icon" `
+            --collect-all whydpi `
             --collect-all pydivert `
+            --copy-metadata whydpi `
             --hidden-import whydpi.platforms.windows `
             --hidden-import whydpi.system.windivert `
             --hidden-import whydpi.system.dns_windows `
+            --hidden-import whydpi.cli `
             --name whydpi `
             --distpath build\dist `
             --workpath build\work `
@@ -242,16 +255,42 @@ jobs:
         run: |
           # Invoking a --uac-admin exe from the GH Actions shell does not
           # return a usable exit code (the UAC broker is involved even on
-          # runners), so we cannot rely on `whydpi.exe --help`.  Settle
-          # for a structural check: both exes must exist and be plausibly
-          # sized (> 1 MiB — a PyInstaller onefile is always several MiB).
+          # runners), so we cannot rely on `whydpi.exe --help`.  We do two
+          # structural checks that catch the regressions we've actually
+          # seen in the wild:
+          #
+          #   1. File exists and has a plausible size (>= 1 MiB — a
+          #      PyInstaller onefile is always several MiB).
+          #   2. The embedded PyInstaller archive actually contains the
+          #      `whydpi.ui.tray` / `whydpi.cli` modules.  We hit a real
+          #      user-facing ModuleNotFoundError when an editable install
+          #      silently produced module-free bundles, so we assert here
+          #      using pyi-archive_viewer in batch mode.
           $tray = Get-Item .\whydpi-tray.exe
           $cli  = Get-Item .\whydpi.exe
           Write-Host ("whydpi-tray.exe : {0} bytes" -f $tray.Length)
           Write-Host ("whydpi.exe      : {0} bytes" -f $cli.Length)
           if ($tray.Length -lt 1048576) { throw "whydpi-tray.exe suspiciously small" }
           if ($cli.Length  -lt 1048576) { throw "whydpi.exe suspiciously small"      }
-          Write-Host "smoke OK — bundle integrity left to end-user verification"
+
+          Write-Host "---- content check (pyi-archive_viewer) ----"
+          # pyi-archive_viewer -b dumps all TOC entries, one per line.
+          # If our package isn't in there, grep will exit non-zero.
+          $trayToc = & pyi-archive_viewer -b -r .\whydpi-tray.exe 2>&1 | Out-String
+          $cliToc  = & pyi-archive_viewer -b -r .\whydpi.exe      2>&1 | Out-String
+          foreach ($mod in @('whydpi.ui.tray', 'whydpi.platforms.windows', 'whydpi.system.windivert', 'whydpi.system.dns_windows')) {
+            if ($trayToc -notmatch [regex]::Escape($mod)) {
+              Write-Host "::error title=Bundle check::whydpi-tray.exe missing module $mod"
+              throw "whydpi-tray.exe does not bundle $mod"
+            }
+          }
+          foreach ($mod in @('whydpi.cli', 'whydpi.platforms.windows')) {
+            if ($cliToc -notmatch [regex]::Escape($mod)) {
+              Write-Host "::error title=Bundle check::whydpi.exe missing module $mod"
+              throw "whydpi.exe does not bundle $mod"
+            }
+          }
+          Write-Host "smoke OK — both exes contain the expected whydpi modules"
 
       - name: Compile Inno Setup installer
         shell: pwsh
