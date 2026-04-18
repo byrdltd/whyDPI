@@ -233,14 +233,31 @@ jobs:
         run: |
           ls -la dist/
 
-      - uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          files: |
-            dist/*.deb
-            dist/*.rpm
-            dist/*.exe
-          fail_on_unmatched_files: true
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          mapfile -t FILES < <(ls dist/*.deb dist/*.rpm dist/*.exe 2>/dev/null)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "no artefacts to upload" >&2
+            exit 1
+          fi
+          echo "uploading ${#FILES[@]} file(s):"
+          printf '  %s\n' "${FILES[@]}"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists — uploading assets (overwrite)"
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+          else
+            echo "creating release $TAG"
+            gh release create "$TAG" "${FILES[@]}" \
+              --title "$TAG" \
+              --generate-notes
+          fi
 
   # --------------------------------------------------------------------------
   #  Scoop bucket manifest — update hash + version in bucket/whydpi.json
