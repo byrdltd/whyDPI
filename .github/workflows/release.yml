@@ -345,18 +345,21 @@ jobs:
           echo "uploading ${#FILES[@]} file(s):"
           printf '  %s\n' "${FILES[@]}"
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          # --repo is required because this job doesn't check the repo
+          # out — gh falls back to local git context otherwise and dies
+          # with "not a git repository".
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "release $TAG already exists — uploading assets (overwrite)"
-            gh release upload "$TAG" "${FILES[@]}" --clobber
+            gh release upload "$TAG" "${FILES[@]}" --repo "$GITHUB_REPOSITORY" --clobber
             rc=$?
           else
             echo "creating release $TAG"
             gh release create "$TAG" "${FILES[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
               --title "$TAG" \
               --generate-notes 2>&1 | tee /tmp/ghcreate.log
             rc=${PIPESTATUS[0]}
             if [ "$rc" -ne 0 ]; then
-              # Turn the first non-empty error line into a workflow annotation
               while IFS= read -r line; do
                 [ -z "$line" ] && continue
                 safe=$(printf '%s' "$line" | sed 's/%/%25/g' | tr '\n' ' ')
