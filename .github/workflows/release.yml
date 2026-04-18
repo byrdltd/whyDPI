@@ -168,10 +168,40 @@ jobs:
           $code = $LASTEXITCODE
           Write-Host ("---- tail of PyInstaller log (exit={0}) ----" -f $code)
           if (Test-Path $log) { Get-Content $log -Tail 120 }
+          if ($code -ne 0 -and (Test-Path $log)) {
+            # Surface the actually-useful lines as workflow annotations
+            # so they show up via the check-runs API without needing
+            # repo log-read auth.
+            Get-Content $log | ForEach-Object {
+              if ($_ -match '^(ERROR|RecursionError|ModuleNotFoundError|ImportError|SyntaxError|Traceback|FileNotFoundError|PermissionError|OSError)') {
+                $msg = $_ -replace '%','%25' -replace "`r",'' -replace "`n",'%0A'
+                Write-Host "::error title=PyInstaller::$msg"
+              }
+            }
+          }
           Write-Host "---- PyInstaller warn files (if any) ----"
           Get-ChildItem build\work -Recurse -Filter "warn-*.txt" -ErrorAction SilentlyContinue | `
-            ForEach-Object { Write-Host "== $($_.FullName) =="; Get-Content $_.FullName -Tail 60 }
+            ForEach-Object {
+              Write-Host "== $($_.FullName) =="
+              $wcontent = Get-Content $_.FullName -Tail 60
+              $wcontent | ForEach-Object { Write-Host $_ }
+              if ($code -ne 0) {
+                $msg = ($wcontent -join '%0A') -replace '%(?!0A)','%25'
+                Write-Host "::warning title=PyInstaller warn file::$msg"
+              }
+            }
           if ($code -ne 0) { throw "pyinstaller tray build failed (exit $code)" }
+
+      - name: Upload PyInstaller logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-logs
+          path: |
+            packaging/windows/build/*.log
+            packaging/windows/build/work/**/warn-*.txt
+          retention-days: 7
+          if-no-files-found: ignore
 
       - name: Build whydpi.exe
         shell: pwsh
