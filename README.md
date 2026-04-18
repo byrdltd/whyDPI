@@ -54,17 +54,29 @@ paru -S whydpi           # stable
 sudo systemctl enable --now whydpi
 ```
 
-### Debian / Ubuntu (PPA — coming soon)
+### Debian / Ubuntu
+
+Binary `.deb` attached to each GitHub release (tested on Debian 12,
+Ubuntu 22.04 and Ubuntu 24.04).
 
 ```bash
-# Planned:
-# sudo add-apt-repository ppa:byrdltd/whydpi
-# sudo apt install whydpi
+curl -LO https://github.com/byrdltd/whyDPI/releases/latest/download/whydpi_0.2.1-1_all.deb
+sudo apt install ./whydpi_0.2.1-1_all.deb
+sudo systemctl enable --now whydpi
 ```
 
-A tested Debian source package lives in `packaging/debian/`.  Until the
-PPA is live you can build your own `.deb` in a container —
-see `packaging/debian/README.md`.
+A future Launchpad PPA will bring `apt` auto-updates; until then pin the
+version you want from the [Releases page](https://github.com/byrdltd/whyDPI/releases).
+
+### Fedora
+
+```bash
+sudo dnf install https://github.com/byrdltd/whyDPI/releases/latest/download/whydpi-0.2.1-1.fc41.noarch.rpm
+sudo systemctl enable --now whydpi
+```
+
+Fedora 41 build is shipped; a future Fedora COPR repo will bring
+`dnf` auto-updates.
 
 ### Any Linux (from source)
 
