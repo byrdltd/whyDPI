@@ -1,0 +1,123 @@
+name: Build release packages
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build for (e.g. v0.2.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write  # required for softprops/action-gh-release to upload assets
+
+jobs:
+  # --------------------------------------------------------------------------
+  #  Debian / Ubuntu  →  .deb
+  # --------------------------------------------------------------------------
+  deb:
+    name: Build .deb (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:bookworm
+            slug: debian12
+          - image: ubuntu:24.04
+            slug: ubuntu24.04
+          - image: ubuntu:22.04
+            slug: ubuntu22.04
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends \
+            build-essential devscripts dpkg-dev debhelper dh-python \
+            python3-all python3-build python3-setuptools python3-wheel \
+            pybuild-plugin-pyproject lintian git ca-certificates
+
+      - uses: actions/checkout@v4
+
+      - name: Build .deb
+        run: |
+          packaging/debian/build-deb.sh
+
+      - name: Rename artifacts for the release
+        run: |
+          cd packaging/debian/dist
+          VERSION=$(ls whydpi_*.deb | sed -E 's/whydpi_([^_]+)_.*/\1/')
+          for f in whydpi_${VERSION}_all.deb; do
+            mv "$f" "whydpi_${VERSION}_${{ matrix.slug }}_all.deb"
+          done
+          ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.slug }}
+          path: packaging/debian/dist/*.deb
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
+  #  Fedora  →  .rpm
+  # --------------------------------------------------------------------------
+  rpm:
+    name: Build .rpm (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ['fedora:41', 'fedora:40']
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y --quiet \
+            rpm-build rpmlint git tar \
+            python3-devel python3-setuptools python3-build \
+            python3-installer python3-wheel systemd-rpm-macros
+
+      - uses: actions/checkout@v4
+
+      - name: Build .rpm
+        run: |
+          packaging/fedora/build-rpm.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.image }}
+          path: packaging/fedora/dist/*.rpm
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
+  #  Attach everything to the release (tag pushes only)
+  # --------------------------------------------------------------------------
+  release:
+    name: Attach to GitHub Release
+    needs: [deb, rpm]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List artefacts
+        run: |
+          ls -la dist/
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            dist/*.deb
+            dist/*.rpm
+          fail_on_unmatched_files: true
