@@ -132,7 +132,7 @@ jobs:
         from whydpi.core.cache import StrategyCache
         from whydpi.system.windivert import _remap_for_packet_layer, PacketShaper
         from whydpi.system.dns_redirect_windows import PacketDnsHijacker
-        from whydpi.net.dns import DoHClient
+        from whydpi.net.dns import DoHClient, DoHEndpoint
         from whydpi.net.dns_cache import DnsCache
 
         # Since 0.2.8 the shaper handles TCP-seq rewriting natively, so
@@ -155,7 +155,12 @@ jobs:
         # PacketDnsHijacker constructor exercises dependencies without
         # touching the WinDivert driver (start() is what opens the handle).
         doh = DoHClient(
-            address="1.1.1.1", port=443, hostname="cloudflare-dns.com",
+            DoHEndpoint(
+                ip="1.1.1.1",
+                port=443,
+                path="/dns-query",
+                hostname="cloudflare-dns.com",
+            ),
         )
         hijacker = PacketDnsHijacker(primary=doh, cache=DnsCache())
         assert not hijacker._running
