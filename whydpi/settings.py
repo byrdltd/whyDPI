@@ -27,12 +27,40 @@ DNSMode = Literal["doh", "altport", "off"]
 @dataclass(frozen=True)
 class DNSSettings:
     mode: DNSMode = "doh"
-    # Generic public DoH resolver — IP only, no hostname in code.  DoH traffic
-    # naturally traverses our own TLS proxy and inherits its fragmentation.
-    doh_endpoint_ip: str = "1.1.1.1"
+    # Public DoH resolver addressed by IP, but certificate-verified
+    # against a pinned hostname so a transparent MITM cannot substitute
+    # its own DNS answers.  The hostname is the SNI we present on the
+    # wire and the name we match the peer certificate against.  DoH
+    # traffic naturally traverses our own TLS proxy and inherits its
+    # fragmentation, so the SNI is never leaked to a DPI middlebox.
+    #
+    # Resolver selection rationale.  Three public DoH endpoints were
+    # evaluated on a DPI-heavy consumer ISP during development:
+    #   * Cloudflare (1.1.1.1, cloudflare-dns.com) — TLS handshake is
+    #     aggressively interrupted by the transit DPI with an injected
+    #     ``0x15 0x03 0x03`` alert, and *no* ClientHello fragmentation
+    #     strategy in our fallback list currently survives it.  Keeping
+    #     Cloudflare as a primary leaves the engine without DNS on the
+    #     exact networks it is most needed on.
+    #   * Quad9 (9.9.9.9, dns.quad9.net) — TLS works, but Quad9 enforces
+    #     RFC 8484 §5.1 strictly and rejects HTTP/1.1 requests with
+    #     ``400 Bad Request``.  Our keep-alive pool is HTTP/1.1, so
+    #     every query turns into an empty body and falls through to
+    #     the ISP's resolver (the poisoning we are trying to defeat).
+    #   * Google (8.8.8.8, dns.google) — TLS survives the ISP without
+    #     fragmentation and the server speaks HTTP/1.1 DoH natively.
+    #
+    # Google is therefore the primary; Cloudflare is the fallback only
+    # because it also speaks HTTP/1.1 — on networks that DO let the
+    # Cloudflare TLS handshake through, it keeps us resilient to a
+    # Google outage.  Users who want a different pair configure
+    # `doh_endpoint_*` / `doh_fallback_*` freely.
+    doh_endpoint_ip: str = "8.8.8.8"
+    doh_endpoint_hostname: str = "dns.google"
     doh_endpoint_path: str = "/dns-query"
     # Secondary is tried if primary fails health check.
-    doh_fallback_ip: str = "9.9.9.9"
+    doh_fallback_ip: str = "1.1.1.1"
+    doh_fallback_hostname: str = "cloudflare-dns.com"
     # Local stub resolver address written into /etc/resolv.conf.
     stub_address: str = "127.0.0.53"
     stub_port: int = 53
@@ -132,8 +160,10 @@ def _merge_dns(base: DNSSettings, data: dict) -> DNSSettings:
     for key in (
         "mode",
         "doh_endpoint_ip",
+        "doh_endpoint_hostname",
         "doh_endpoint_path",
         "doh_fallback_ip",
+        "doh_fallback_hostname",
         "stub_address",
         "altport_server",
     ):
@@ -181,8 +211,10 @@ def _apply_env(s: Settings) -> Settings:
         s.dns,
         mode=_env("DNS_MODE", s.dns.mode),  # type: ignore[arg-type]
         doh_endpoint_ip=_env("DOH_IP", s.dns.doh_endpoint_ip),
+        doh_endpoint_hostname=_env("DOH_HOSTNAME", s.dns.doh_endpoint_hostname),
         doh_endpoint_path=_env("DOH_PATH", s.dns.doh_endpoint_path),
         doh_fallback_ip=_env("DOH_FALLBACK_IP", s.dns.doh_fallback_ip),
+        doh_fallback_hostname=_env("DOH_FALLBACK_HOSTNAME", s.dns.doh_fallback_hostname),
         altport_server=_env("ALTPORT_SERVER", s.dns.altport_server),
         altport_port=int(_env("ALTPORT_PORT", str(s.dns.altport_port)) or 0),
     )

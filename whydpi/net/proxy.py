@@ -30,8 +30,8 @@ from typing import Iterable
 
 from ..core.cache import StrategyCache
 from ..core.discovery import discover, order_candidates
-from ..core.strategy import FragmentPlan, Strategy, build_plan
-from .tls_parser import ClientHelloView, looks_like_client_hello, parse_client_hello, read_client_hello
+from ..core.strategy import Strategy
+from .tls_parser import looks_like_client_hello, parse_client_hello, read_client_hello
 
 
 logger = logging.getLogger(__name__)

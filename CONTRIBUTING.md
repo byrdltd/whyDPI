@@ -6,6 +6,27 @@ Thank you for your interest in contributing to whyDPI! This document provides gu
 
 Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md) to keep our community approachable and respectable.
 
+## Safe, responsible contributions
+
+whyDPI is **educational research software**.  To keep the repository
+usable in public and safe for downstream packagers:
+
+- **Do not** embed real-world blocked-site names, pornography brands,
+  gambling operators or other sensational domains in code, tests,
+  fixtures, logs or commit messages — use `example.com`,
+  `192.0.2.0/24` (TEST-NET-1), or clearly fake labels.
+- **Do not** commit credentials, API tokens, personal machine paths or
+  packet captures that could identify users.
+- **Do not** submit changes whose primary purpose is to help evade a
+  specific law, workplace policy or parental-control product you do not
+  administer — technical improvements that happen to help generic DPI
+  research are fine; “unblock X in country Y” drive-by PRs are not.
+- **Do** read [`DISCLAIMER.md`](DISCLAIMER.md) before shipping UX that
+  weakens the acceptable-use story (e.g. hiding the first-run dialog).
+
+Documentation and UI copy stay in **English** so the project remains
+globally legible.
+
 ## How Can I Contribute?
 
 ### Reporting Bugs
@@ -49,7 +70,7 @@ We actively welcome your pull requests! Here's how to contribute code:
 - Fill in the pull request template
 - Keep changes focused - one feature/fix per PR
 - Write clear, descriptive commit messages
-- Include tests for new functionality (when test framework is added)
+- Run `pytest` for logic changes (`pip install -e ".[dev]"` first)
 - Ensure your code passes linting checks
 - Update the README.md if you change functionality
 - Reference related issues in your PR description
@@ -58,8 +79,9 @@ We actively welcome your pull requests! Here's how to contribute code:
 
 ### Prerequisites
 
-- Linux system (Arch, Debian/Ubuntu, Fedora, or similar)
-- Python 3.8 or higher
+- Linux system (Arch, Debian/Ubuntu, Fedora, or similar) and/or Windows
+  for platform-specific work
+- Python 3.10 or higher
 - Root/sudo access (for testing packet manipulation)
 - Git
 
@@ -74,14 +96,15 @@ cd whyDPI
 python3 -m venv venv
 source venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install in editable mode + dev tools (pytest)
+pip install -e ".[dev]"
+```
 
-# Install development dependencies (when available)
-# pip install -r requirements-dev.txt
+Optional — git hooks for whitespace / YAML sanity (once per clone):
 
-# Install in editable mode
-pip install -e .
+```bash
+pip install pre-commit
+pre-commit install
 ```
 
 ### System Dependencies
@@ -106,7 +129,13 @@ sudo dnf install libnetfilter_queue-devel iptables python3-pip gcc
 
 ### Testing Your Changes
 
-Since whyDPI requires root privileges and manipulates network traffic, testing requires care:
+1. **Unit tests (no root, no network)** — from a venv:
+   ```bash
+   pip install -e ".[dev]"
+   pytest
+   ```
+
+Since whyDPI requires root privileges and manipulates network traffic, **live** testing requires care:
 
 1. **Test in a VM or isolated environment** first
 2. **Verify iptables rules** are created correctly:
@@ -204,45 +233,42 @@ this particular solution.
 - `update code`
 - `changes`
 
-## Project Structure
-
-Understanding the codebase structure:
+## Project structure (current)
 
 ```
 whyDPI/
-├── whydpi/                    # Main package directory
-│   ├── __init__.py           # Package initialization, version info
-│   ├── __main__.py           # CLI entry point, argument parsing
-│   ├── config.py             # Configuration constants
-│   ├── dns_config.py         # DNS management (setup/restore)
-│   ├── nfqueue_handler.py    # Packet interception via NFQUEUE
-│   └── packet_injector.py    # Random garbage packet injection
-├── install.sh                # Installation script
-├── whydpi.service           # Systemd service file
-├── setup.py                 # Package configuration
-├── requirements.txt         # Python dependencies
-├── README.md                # Main documentation
-├── LICENSE                  # MIT License with disclaimers
-├── SECURITY.md              # Security policy
-├── CONTRIBUTING.md          # This file
-└── CODE_OF_CONDUCT.md       # Community guidelines
+├── whydpi/                 # Python package (CLI, engine, platforms, net, ui)
+│   ├── cli.py              # ``whydpi`` subcommands
+│   ├── core/               # strategy cache, discovery, engine
+│   ├── net/                # TLS, DoH, transparent proxy (Linux)
+│   ├── platforms/        # linux.py / windows.py engine wiring
+│   ├── system/             # netfilter, resolver, windivert, dns_redirect_windows
+│   └── ui/                 # tray, autostart, consent, status window
+├── packaging/              # AUR, Debian, Fedora, Windows (Inno, PyInstaller)
+├── tests/                  # pytest unit tests (no root / no live network)
+├── pyproject.toml          # version, optional extras, pytest config
+├── DISCLAIMER.md           # acceptable-use — read before UX changes
+├── README.md
+├── LICENSE
+├── SECURITY.md
+└── CONTRIBUTING.md         # this file
 ```
 
-### Key Components
+### Key entry points
 
-- **dns_config.py**: Handles DNS configuration changes and restoration
-- **nfqueue_handler.py**: Intercepts packets using Linux NFQUEUE
-- **packet_injector.py**: Creates and injects fake packets with random data
-- **config.py**: Stores default values (TTL, ports, DNS servers, etc.)
+- **`whydpi/core/engine.py`** — dispatches to `platforms.linux` or `platforms.windows`
+- **`whydpi/net/proxy.py`** — transparent TLS proxy (Linux only)
+- **`whydpi/system/windivert.py`** — WinDivert TLS shaping (Windows)
+- **`whydpi/system/dns_redirect_windows.py`** — packet-layer DNS → DoH (Windows)
 
 ## Areas Needing Contributions
 
 We especially welcome contributions in these areas:
 
 ### High Priority
-- [ ] Unit tests for DNS configuration functions
-- [ ] Unit tests for packet parsing logic
-- [ ] Integration tests for full DPI bypass workflow
+- [x] Basic pytest coverage (`tests/` — strategy, cache, consent paths)
+- [ ] Unit tests for packet parsing edge cases
+- [ ] Integration tests for full DPI bypass workflow (VM / lab only)
 - [ ] CI/CD workflow improvements
 - [ ] Type hints throughout codebase
 - [ ] Input validation improvements
@@ -257,9 +283,8 @@ We especially welcome contributions in these areas:
 
 ### Documentation
 - [ ] Video tutorials
-- [ ] Architecture documentation
+- [ ] Architecture documentation (see also `docs/` locally — may be gitignored)
 - [ ] Troubleshooting guide expansion
-- [ ] Translation to other languages
 - [ ] Usage examples directory
 
 ### Nice to Have

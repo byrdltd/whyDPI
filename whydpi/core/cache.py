@@ -134,6 +134,11 @@ class StrategyCache:
         with self._lock:
             return tuple(self._entries.keys())
 
+    def entries_snapshot(self) -> list[tuple[str, Entry]]:
+        """Return a sorted copy of all cache rows for UI / diagnostics."""
+        with self._lock:
+            return sorted(self._entries.items(), key=lambda kv: kv[0])
+
     def flush(self) -> None:
         with self._lock:
             if not self._dirty:

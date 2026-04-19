@@ -57,7 +57,7 @@ Source: "build\dist\{#MyExeCli}";  DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\LICENSE";           DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\README.md";         DestDir: "{app}"; Flags: ignoreversion
 Source: "..\..\assets\favicon.ico";DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\assets\logo-256.png";DestDir: "{app}"; Flags: ignoreversion
+Source: "..\..\assets\icon-256.png";DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}";            Filename: "{app}\{#MyExeTray}"; IconFilename: "{app}\favicon.ico"

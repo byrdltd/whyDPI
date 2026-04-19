@@ -26,7 +26,7 @@ override_dh_install:
 	install -D -m 644 packaging/desktop/whydpi-tray.desktop \
 	    debian/whydpi/etc/xdg/autostart/whydpi-tray.desktop
 	set -e; for sz in 16 32 48 64 128 256 512; do \
-	  install -D -m 644 assets/logo-$${sz}.png \
+	  install -D -m 644 assets/icon-$${sz}.png \
 	    debian/whydpi/usr/share/icons/hicolor/$${sz}x$${sz}/apps/whydpi.png; \
 	done
 

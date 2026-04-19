@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 SERVICE = "whydpi.service"
 _POLL_SECONDS = 2.0
 _ABOUT_URL = "https://github.com/byrdltd/whyDPI"
+_DISCLAIMER_URL = "https://github.com/byrdltd/whyDPI/blob/main/DISCLAIMER.md"
 
 IS_WINDOWS = sys.platform == "win32"
 IS_LINUX = sys.platform.startswith("linux")
@@ -113,7 +114,7 @@ class _WindowsInProcessController:
 
     The Windows build ships a single elevated executable (PyInstaller
     ``--uac-admin``) so the tray already has every privilege the engine
-    needs (WinDivert driver load, ``netsh`` adapter mutation).  Spinning
+    needs (WinDivert driver load, ``DnsFlushResolverCache`` API).  Spinning
     the engine up in-process removes the need for a Windows Service and
     keeps all state — including the privacy-wiping cache — co-located
     with the UI.
@@ -222,6 +223,38 @@ def _cache_dir() -> Path:
     return Path.home() / ".cache" / "whydpi"
 
 
+def _show_status(_icon, _item) -> None:
+    """Read-only table of learned per-SNI strategies (from strategies.json).
+
+    pystray invokes menu callbacks on a worker thread; Tk is not thread-safe
+    on X11/Wayland, so we spawn a fresh interpreter — Tk's main loop runs
+    on that process's main thread.
+    """
+    import subprocess
+
+    from ..settings import cache_path, load_settings
+
+    cache_p = cache_path(load_settings())
+    env = os.environ.copy()
+    env["WHYDPI_STATUS_CACHE"] = str(cache_p)
+    popen_kw: dict = {"env": env}
+    if not IS_WINDOWS:
+        popen_kw["close_fds"] = True
+    try:
+        subprocess.Popen(
+            [
+                sys.executable,
+                "-c",
+                "import os; from pathlib import Path; "
+                "from whydpi.ui.status_window import show_status_window; "
+                "show_status_window(Path(os.environ['WHYDPI_STATUS_CACHE']))",
+            ],
+            **popen_kw,
+        )
+    except OSError as exc:
+        logger.warning("tray: could not open status window: %s", exc)
+
+
 def _open_cache(_icon, _item) -> None:
     path = _cache_dir()
     path.mkdir(parents=True, exist_ok=True)
@@ -238,6 +271,18 @@ def _open_cache(_icon, _item) -> None:
 
 def _about(_icon, _item) -> None:
     webbrowser.open(_ABOUT_URL)
+
+
+def _open_disclaimer(_icon, _item) -> None:
+    """Open the educational-use disclaimer in the default browser.
+
+    The tray is the earliest point a normal (non-technical) user
+    interacts with whyDPI — once the installer finishes, the next
+    touch-point is this menu.  We surface the disclaimer as a top-
+    level menu item rather than burying it under "About" so that
+    acceptable-use boundaries are one click away, not two.
+    """
+    webbrowser.open(_DISCLAIMER_URL)
 
 
 def _notify_icon_path() -> str:
@@ -329,7 +374,8 @@ def _print_windows_not_admin_and_exit() -> int:
     print(
         "whyDPI Windows tray must run as Administrator so that:\n"
         "  * WinDivert can load its kernel driver,\n"
-        "  * netsh can reconfigure adapter DNS servers.\n"
+        "  * the DNS packet hijacker can open a WinDivert handle on UDP/53,\n"
+        "  * DnsFlushResolverCache can evict ISP-poisoned cache entries.\n"
         "\n"
         "Right-click the whyDPI shortcut and choose 'Run as administrator'.\n"
         "The installer registers the shortcut with a UAC manifest so a normal\n"
@@ -356,6 +402,13 @@ def run() -> int:
 
     if IS_WINDOWS and not _is_admin_windows():
         return _print_windows_not_admin_and_exit()
+
+    from . import consent as _consent
+
+    if not _consent.has_accepted():
+        if not _consent.run_first_run_dialog():
+            return 4
+        _consent.mark_accepted()
 
     controller = _make_controller()
 
@@ -396,13 +449,65 @@ def run() -> int:
     def running_check(_item) -> bool:
         return state["running"]
 
-    menu = pystray.Menu(
+    # Autostart is deliberately a separate checkbox rather than a
+    # sub-menu so a user can toggle "should this launch with my
+    # computer" without understanding the difference between an XDG
+    # autostart file (Linux) and a Task Scheduler ``ONLOGON`` entry
+    # (Windows).  The helper module figures out which backend applies.
+    from . import autostart as _autostart
+
+    # ``pip install whydpi[tray]`` leaves no app-launcher entry; the
+    # packaged installs (AUR/.deb/.rpm/Inno) all do.  Writing a tiny
+    # user-level .desktop on first run means the tray shows up under
+    # "Network" in every major Linux launcher without requiring root.
+    try:
+        _autostart.ensure_menu_entry()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("tray: ensure_menu_entry failed: %s", exc)
+
+    def autostart_check(_item) -> bool:
+        try:
+            return _autostart.is_enabled()
+        except Exception:  # noqa: BLE001
+            return False
+
+    def toggle_autostart(_icon, _item) -> None:
+        try:
+            target = not _autostart.is_enabled()
+            if _autostart.set_enabled(target):
+                _notify(
+                    "whyDPI will launch on login" if target
+                    else "whyDPI will no longer launch on login",
+                    "Change takes effect at your next sign-in.",
+                )
+            else:
+                _notify(
+                    "Could not change launch-on-login setting",
+                    "See whydpi log for details.",
+                )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("tray: autostart toggle failed: %s", exc)
+
+    menu_items: list[Any] = [
         pystray.MenuItem(start_stop_label, toggle, default=True, checked=running_check),
+        pystray.MenuItem("Show status…", _show_status),
         pystray.MenuItem("Open cache folder", _open_cache),
+    ]
+    if _autostart.is_supported():
+        menu_items.append(
+            pystray.MenuItem(
+                "Launch whyDPI on login",
+                toggle_autostart,
+                checked=autostart_check,
+            )
+        )
+    menu_items.extend([
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("About whyDPI", _about),
-        pystray.MenuItem("Quit tray", quit_app),
-    )
+        pystray.MenuItem("Acceptable-use & disclaimer", _open_disclaimer),
+        pystray.MenuItem("Quit", quit_app),
+    ])
+    menu = pystray.Menu(*menu_items)
 
     icon = pystray.Icon("whydpi", current_icon(), title(), menu)
 
@@ -432,6 +537,23 @@ def run() -> int:
         _icon.visible = True
         t = threading.Thread(target=poller, name="whydpi-tray-poll", daemon=True)
         t.start()
+
+        # On Windows the tray IS the engine host (single elevated
+        # process — see _WindowsInProcessController) so the expected UX
+        # is "launch the app → you are protected".  Requiring the user
+        # to first open the menu and click Start defeated the point of
+        # the installer's Finish-page auto-launch: adapter DNS was
+        # never redirected, the shaper was never on the wire, and
+        # ISP-hijacked DNS answers reached the browser unchanged.
+        # Kick the engine off here so the icon turns coloured as soon
+        # as the service finishes starting up; the poller (above) will
+        # pick up the transition and fire the "active" toast.
+        if IS_WINDOWS and not state["running"]:
+            try:
+                controller.start()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("tray: auto-start failed: %s", exc)
+
         # Fire a single "I'm here" toast so the user knows the tray
         # autostarted and the current service state, without having to
         # hunt for a grey-vs-colour icon amongst 20 other indicators.

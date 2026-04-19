@@ -13,7 +13,7 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 setup(
     name="whydpi",
-    version="0.2.3",
+    version="0.2.8",
     author="whyDPI Contributors",
     description="Educational DPI bypass tool for research purposes",
     long_description=long_description,

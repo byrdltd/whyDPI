@@ -47,6 +47,9 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
+# pre-commit
+.pre-commit/
+
 # Virtual environments
 venv/
 ENV/
@@ -92,3 +95,10 @@ docs/
 .env.*
 credentials.json
 secrets.*
+
+# Diagnostic harness — maintainer-only.  The ``diag/`` folder holds
+# throwaway probes, admin wrappers and ad-hoc logs that are valuable
+# locally but would leak too much of our debugging methodology (and
+# sometimes site names) into a public repo.  Keep it out of the tree
+# entirely; contributors who need it can recreate their own.
+diag/

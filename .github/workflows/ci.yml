@@ -19,6 +19,8 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+        cache: pip
+        cache-dependency-path: pyproject.toml
 
     - name: Install dependencies
       run: |
@@ -52,6 +54,8 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        cache: pip
+        cache-dependency-path: pyproject.toml
 
     - name: Check Python syntax
       run: |
@@ -62,6 +66,27 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install --dry-run -e .
+
+  unit-tests:
+    name: Unit tests (pytest)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: pip
+        cache-dependency-path: pyproject.toml
+
+    - name: Install and run pytest
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev]"
+        pytest
 
   windows-smoke:
     name: Windows Import Smoke Test
@@ -78,11 +103,14 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ matrix.python-version }}
+        cache: pip
+        cache-dependency-path: pyproject.toml
 
-    # Phase 2: import the full Windows stack (shaper, DNS manager, UI) and
-    # exercise the logic that does not require the WinDivert driver or
-    # administrative privileges — strategy remapping, netsh output parsing,
-    # packet-shaper construction.
+    # Import the full Windows stack (TLS shaper, DNS hijacker, DNS cache,
+    # tray, autostart) and exercise the logic that does not require the
+    # WinDivert driver or administrative privileges — strategy remapping,
+    # packet-shaper construction, DNS hijacker construction, in-memory
+    # TTL cache correctness.
     - name: Install package with Windows extras
       run: |
         python -m pip install --upgrade pip
@@ -92,22 +120,26 @@ jobs:
       run: |
         python -c "import whydpi; print('version:', whydpi.__version__)"
         python -c "from whydpi.platforms import windows; print('windows backend imported')"
-        python -c "from whydpi.system import windivert, dns_windows; print('windows system modules imported')"
-        python -c "from whydpi.ui import tray; print('tray module imported')"
+        python -c "from whydpi.system import windivert, dns_redirect_windows; print('windows system modules imported')"
+        python -c "from whydpi.net import dns, dns_cache; print('dns modules imported')"
+        python -c "from whydpi.ui import tray, autostart; print('ui modules imported')"
 
-    - name: Sanity-check strategy remapping and netsh parser
+    - name: Sanity-check strategy remapping and DNS hijacker construction
       shell: python
       run: |
-        import sys
-        from whydpi.core.strategy import Strategy
-        from whydpi.system.windivert import _remap_for_packet_layer, PacketShaper
-        from whydpi.system.dns_windows import _parse_dns
-        from whydpi.core.cache import StrategyCache
         import tempfile, pathlib
+        from whydpi.core.strategy import Strategy
+        from whydpi.core.cache import StrategyCache
+        from whydpi.system.windivert import _remap_for_packet_layer, PacketShaper
+        from whydpi.system.dns_redirect_windows import PacketDnsHijacker
+        from whydpi.net.dns import DoHClient
+        from whydpi.net.dns_cache import DnsCache
 
-        # record:* must demote to tcp:* so TCP sequence accounting stays intact
-        assert _remap_for_packet_layer(Strategy.parse("record:2")).layer == "tcp"
-        assert _remap_for_packet_layer(Strategy.parse("record:sni-mid")).layer == "tcp"
+        # Since 0.2.8 the shaper handles TCP-seq rewriting natively, so
+        # record:* strategies run at the packet layer unchanged.
+        # _remap_for_packet_layer is a no-op kept for API compatibility.
+        assert _remap_for_packet_layer(Strategy.parse("record:2")).layer == "record"
+        assert _remap_for_packet_layer(Strategy.parse("record:sni-mid")).layer == "record"
         assert _remap_for_packet_layer(Strategy.parse("tcp:sni-mid")).layer == "tcp"
 
         # PacketShaper can be constructed without opening the driver
@@ -120,13 +152,13 @@ jobs:
             )
             assert shaper._default.layer == "tcp"
 
-        # netsh output parser
-        servers, dhcp = _parse_dns(
-            "  Statically Configured DNS Servers:  192.0.2.1\n"
-            "    192.0.2.2\n"
+        # PacketDnsHijacker constructor exercises dependencies without
+        # touching the WinDivert driver (start() is what opens the handle).
+        doh = DoHClient(
+            address="1.1.1.1", port=443, hostname="cloudflare-dns.com",
         )
-        assert servers == ["192.0.2.1", "192.0.2.2"], servers
-        assert dhcp is False
+        hijacker = PacketDnsHijacker(primary=doh, cache=DnsCache())
+        assert not hijacker._running
 
         print("Windows smoke OK")
 

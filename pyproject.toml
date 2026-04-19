@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "whydpi"
-version = "0.2.3"
+version = "0.2.8"
 description = "Educational DPI bypass tool — adaptive per-SNI TLS fragmentation"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -50,6 +50,9 @@ tray = [
     'pystray >= 0.19',
     'Pillow  >= 10',
 ]
+dev = [
+    "pytest>=7.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/byrdltd/whyDPI"
@@ -73,3 +76,8 @@ exclude = ["tests*", "packaging*"]
 # find it regardless of whether the user installed via pip, AUR, .deb
 # or .rpm.
 "whydpi.ui" = ["_assets/*.png"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"

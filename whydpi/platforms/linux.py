@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from ..net.dns import DNSStubServer, DoHClient, DoHEndpoint
+from ..net.dns_cache import DnsCache
 from ..net.proxy import TransparentTLSProxy
 from ..settings import Settings, cache_path
 from ..system import resolver as resolver_system
@@ -34,39 +35,56 @@ class Runtime:
     dns_stub: DNSStubServer | None
     netfilter: Netfilter
     cache: StrategyCache
+    dns_cache: DnsCache
+    doh_clients: tuple[DoHClient, ...]
     configure_resolver: bool
     resolver_servers: list[str]
 
 
-def _build_doh_client(ip: str, path: str, timeout: float) -> DoHClient:
-    return DoHClient(DoHEndpoint(ip=ip, path=path), timeout_s=timeout)
+def _build_doh_client(ip: str, hostname: str, path: str, timeout: float) -> DoHClient:
+    return DoHClient(
+        DoHEndpoint(ip=ip, hostname=hostname or None, path=path),
+        timeout_s=timeout,
+    )
 
 
-def _dns_stub(settings: Settings) -> DNSStubServer | None:
+def _dns_stub(
+    settings: Settings,
+    dns_cache: DnsCache,
+) -> tuple[DNSStubServer | None, tuple[DoHClient, ...]]:
+    """Build the DoH-forwarding stub + the list of DoH clients to close
+    on shutdown.  Returns ``(None, ())`` when DNS mode isn't ``doh``."""
     if settings.dns.mode != "doh":
-        return None
+        return None, ()
     primary = _build_doh_client(
         settings.dns.doh_endpoint_ip,
+        settings.dns.doh_endpoint_hostname,
         settings.dns.doh_endpoint_path,
         5.0,
     )
     fallback = None
+    clients: list[DoHClient] = [primary]
     if settings.dns.doh_fallback_ip:
         fallback = _build_doh_client(
             settings.dns.doh_fallback_ip,
+            settings.dns.doh_fallback_hostname,
             settings.dns.doh_endpoint_path,
             5.0,
         )
-    return DNSStubServer(
+        clients.append(fallback)
+    stub = DNSStubServer(
         bind_address=settings.dns.stub_address,
         bind_port=settings.dns.stub_port,
         primary=primary,
         fallback=fallback,
+        cache=dns_cache,
     )
+    return stub, tuple(clients)
 
 
 def build_runtime(settings: Settings, *, configure_resolver: bool) -> Runtime:
     cache = StrategyCache.load(cache_path(settings))
+    dns_cache = DnsCache()
 
     default_strategy = Strategy.parse(settings.tls.default_strategy)
     fallbacks = parse_fallback(settings.tls.fallback_strategies)
@@ -83,7 +101,7 @@ def build_runtime(settings: Settings, *, configure_resolver: bool) -> Runtime:
         ipv6_enabled=settings.net.ipv6_enabled,
     )
 
-    stub = _dns_stub(settings)
+    stub, doh_clients = _dns_stub(settings, dns_cache)
 
     dns_stub_address: str | None = None
     dns_stub_port: int = 53
@@ -123,6 +141,8 @@ def build_runtime(settings: Settings, *, configure_resolver: bool) -> Runtime:
         dns_stub=stub,
         netfilter=Netfilter(rules),
         cache=cache,
+        dns_cache=dns_cache,
+        doh_clients=doh_clients,
         configure_resolver=configure_resolver and bool(resolver_servers),
         resolver_servers=resolver_servers,
     )
@@ -147,6 +167,22 @@ def run(settings: Settings, *, configure_resolver: bool,
         if runtime.configure_resolver:
             if not resolver_system.is_configured(runtime.resolver_servers):
                 resolver_system.configure(runtime.resolver_servers)
+
+        # Pre-warm the DoH connection pool so the first burst of
+        # queries doesn't pay the TLS handshake cost on its critical
+        # path.  Runs off-thread and is non-fatal on failure.
+        def _warm_pool() -> None:
+            for client in runtime.doh_clients:
+                try:
+                    opened = client.warm_up()
+                    logger.info("DoH pool pre-warmed: %s -> %d idle conns",
+                                client, opened)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("DoH warm-up skipped (%s): %s", client, exc)
+
+        if runtime.doh_clients:
+            import threading as _t
+            _t.Thread(target=_warm_pool, name="whydpi-doh-warm", daemon=True).start()
 
         logger.info("whyDPI running — Ctrl+C or SIGTERM to stop")
 
@@ -182,6 +218,18 @@ def run(settings: Settings, *, configure_resolver: bool,
             logger.info("session cache wiped (privacy: no history kept)")
         except Exception as exc:
             logger.warning("cache wipe: %s", exc)
+        # DNS answers and upstream DoH keep-alive sockets disappear in
+        # the same shutdown breath as the strategy cache — no resolver
+        # state outlives the session.
+        try:
+            runtime.dns_cache.wipe()
+        except Exception as exc:
+            logger.warning("dns cache wipe: %s", exc)
+        for client in runtime.doh_clients:
+            try:
+                client.close()
+            except Exception as exc:
+                logger.warning("doh client close: %s", exc)
 
 
 def _wait_for_signal() -> None:

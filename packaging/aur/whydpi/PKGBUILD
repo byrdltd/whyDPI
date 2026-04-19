@@ -1,7 +1,7 @@
 # Maintainer: byrdltd <byrdltd@users.noreply.github.com>
 
 pkgname=whydpi
-pkgver=0.2.3
+pkgver=0.2.8
 pkgrel=1
 pkgdesc="Adaptive, per-SNI DPI bypass that learns optimal TLS fragmentation per host"
 arch=('any')
@@ -55,7 +55,7 @@ package() {
   # Hicolor icon theme entries — Icon=whydpi in the .desktop resolves
   # to whichever size the current panel asks for.
   for sz in 16 32 48 64 128 256 512; do
-    install -Dm644 "assets/logo-${sz}.png" \
+    install -Dm644 "assets/icon-${sz}.png" \
       "${pkgdir}/usr/share/icons/hicolor/${sz}x${sz}/apps/whydpi.png"
   done
 }

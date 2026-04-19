@@ -1,3 +1,38 @@
+whydpi (0.2.8-1) unstable; urgency=medium
+
+  * Windows DNS: replaced the netsh/NRPT-based resolver override with a
+    WinDivert packet-layer DNS hijacker — UDP/53 is intercepted at the
+    driver, forwarded over DoH and answered with a synthetic reply.
+    The OS's persistent DNS configuration is never mutated, so a
+    crash or kill -9 can no longer leave the machine in a half-
+    configured state, and DPI-injected "block-page" answers can no
+    longer reach the browser.
+  * DoH client: HTTP/1.1 keep-alive connection pool reduces per-query
+    latency; mandatory TLS certificate/hostname verification plugs a
+    MITM exposure that was documented but not previously enforced.
+  * DoH: new TTL-aware in-memory DNS answer cache dedup-merges
+    concurrent queries issued by browser parallel fetchers, so the
+    first page load after the engine starts is no longer gated on a
+    storm of duplicate round trips.
+  * Discovery: new parallel strategy racing — on first connect to a
+    previously-unseen SNI, multiple candidate fragmentations are tried
+    concurrently and the winner cached.
+  * Tray: new "Launch whyDPI on login" toggle (XDG autostart on Linux,
+    Task Scheduler ONLOGON on Windows).  Visible menu entry renamed
+    from "whyDPI Tray" to just "whyDPI".  New "Acceptable-use &
+    disclaimer" menu item linking to DISCLAIMER.md.
+  * Tray (pip install): self-provisions ~/.local/share/applications/
+    on first launch, so the tray shows up in the KDE/GNOME launcher
+    even without a .deb install.
+  * Assets: canonical square assets/icon.png + horizontal
+    assets/logo.png replace the previous logo-wide/logo-XX series;
+    hicolor apps now install from icon-{sz}.png.
+  * New top-level DISCLAIMER.md covering educational scope,
+    acceptable-use boundaries, legal responsibility, privacy and
+    export-control footnotes.
+
+ -- byrdltd <byrdltd@users.noreply.github.com>  Sun, 19 Apr 2026 08:00:00 +0000
+
 whydpi (0.2.3-1) unstable; urgency=medium
 
   * Windows installer fixes: shellexec flag for post-install launch

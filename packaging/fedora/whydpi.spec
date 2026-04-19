@@ -6,7 +6,7 @@
 %global pypi_name whydpi
 
 Name:           %{pypi_name}
-Version:        0.2.3
+Version:        0.2.8
 Release:        1%{?dist}
 Summary:        Adaptive, per-SNI DPI bypass with TLS fragmentation
 
@@ -65,7 +65,7 @@ install -D -m 644 packaging/desktop/whydpi-tray.desktop \
 
 # Hicolor icons so the DE can resolve Icon=whydpi at any panel size.
 for sz in 16 32 48 64 128 256 512; do
-  install -D -m 644 assets/logo-${sz}.png \
+  install -D -m 644 assets/icon-${sz}.png \
     %{buildroot}%{_datadir}/icons/hicolor/${sz}x${sz}/apps/whydpi.png
 done
 
@@ -91,6 +91,35 @@ done
 %{_datadir}/icons/hicolor/*/apps/whydpi.png
 
 %changelog
+* Sun Apr 19 2026 byrdltd <byrdltd@users.noreply.github.com> - 0.2.8-1
+- Windows DNS: replaced netsh/NRPT with a WinDivert packet-layer DNS
+  hijacker that intercepts UDP/53 at the driver, forwards via DoH and
+  injects synthetic replies — no more tampering with persistent OS
+  DNS state, and no more DPI-injected "block-page" answers reaching
+  the browser.
+- DoH client: HTTP/1.1 keep-alive connection pool (cuts per-query
+  latency) with mandatory TLS certificate/hostname verification;
+  hostname pinning is no longer skipped.
+- DoH: new TTL-aware in-memory DNS answer cache dedup-merges
+  concurrent queries so a browser's parallel-HTTP fetch storm on a
+  content-heavy page no longer stalls behind duplicate DoH round
+  trips at the start of each session.
+- Discovery: new parallel strategy racing — the proxy can now try
+  multiple fragmentation candidates concurrently on the first
+  connection to a new SNI and keep the winner.
+- Tray: new "Launch whyDPI on login" menu toggle (Linux XDG
+  autostart / Windows Task Scheduler ONLOGON).  Renamed visible menu
+  entry from "whyDPI Tray" to just "whyDPI".  New dedicated
+  "Acceptable-use & disclaimer" menu entry opens DISCLAIMER.md.
+- Tray (pip install): self-provisions a user-level
+  ~/.local/share/applications entry on first launch so whyDPI shows
+  up in the KDE/GNOME launcher even without a packaged install.
+- Assets: canonical square ``assets/icon.png`` + horizontal
+  ``assets/logo.png`` replace the previous logo-wide/logo-XX set;
+  hicolor apps install from ``icon-{sz}.png`` now.
+- Added DISCLAIMER.md covering educational scope, acceptable-use
+  boundaries, legal responsibility, privacy and export footnotes.
+
 * Sat Apr 18 2026 byrdltd <byrdltd@users.noreply.github.com> - 0.2.3-1
 - Windows installer fixes: shellexec flag for UAC-elevated post-install
   launch (fixes CreateProcess error 740), and whydpi.ui.tray / whydpi.cli

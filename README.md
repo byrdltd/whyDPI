@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo-wide.png" alt="whyDPI" width="720">
+  <img src="assets/logo.png" alt="whyDPI" width="520">
 </p>
 
 <p align="center">
@@ -12,6 +12,33 @@ whyDPI is a transparent TLS proxy (Linux) / packet-level TLS shaper
 hard-coded hostnames, domains or ISP-specific resolvers**: what works for a
 given destination is discovered at runtime, cached per-SNI, and refined when
 conditions change.
+
+> ### ⚠ Read this before installing
+>
+> whyDPI is **research and education software**.  It does not ship a
+> list of destinations to unblock — the operator (*you*) decides every
+> address it ever touches.  That neutrality makes the tool useful for
+> network studies and equally easy to misuse, so before you install,
+> please take five minutes to read [**`DISCLAIMER.md`**](DISCLAIMER.md).
+> In short:
+>
+> * It is **not** a way around parental-control, school or
+>   corporate-policy filters.
+> * It is **not** a shield for accessing content that is unlawful in
+>   your jurisdiction regardless of transport (CSAM, NCII, court-
+>   ordered takedowns, unlicensed copyrighted material…).
+> * Running it elevates your attack surface (kernel-level packet
+>   interception, DNS hijacking) — only install from the official
+>   channels listed below.
+> * Legal responsibility for every packet whyDPI shapes is **yours**;
+>   the authors, maintainers and packagers carry none of it.
+>
+> By running whyDPI you acknowledge `DISCLAIMER.md` in full.
+>
+> The graphical tray shows a **one-time acceptable-use dialog** the first
+> time it starts (until you click *I have read and accept*).  Automation
+> may set `WHYDPI_SKIP_DISCLAIMER=1` — documented for CI only, not for
+> skipping consent on a personal machine.
 
 ## How it works
 

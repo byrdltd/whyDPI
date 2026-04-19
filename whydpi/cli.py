@@ -186,7 +186,15 @@ def _add_common(parser: argparse.ArgumentParser) -> None:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="whydpi",
-        description="Educational DPI bypass — transparent TLS fragmentation + DoH",
+        description=(
+            "Educational DPI bypass — transparent TLS fragmentation + DoH. "
+            "Set WHYDPI_TRACE=1 to log every intercepted TCP/443, UDP/443 "
+            "and UDP/53 packet at INFO level (Windows-only, diagnostic)."
+        ),
+        epilog=(
+            "Tray: set WHYDPI_SKIP_DISCLAIMER=1 only in CI/automation to skip "
+            "the first-run acceptable-use dialog (not for end users)."
+        ),
     )
     sub = parser.add_subparsers(dest="command")
 
