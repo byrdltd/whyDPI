@@ -25,10 +25,7 @@ makedepends=(
 )
 conflicts=("${pkgname}-git")
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
-# Populated post-tag with the real sha256 of the GitHub archive; SKIP
-# here lets us regenerate .SRCINFO locally without the tarball being
-# published yet (the AUR maintainer refreshes the hash before upload).
-sha256sums=('SKIP')
+sha256sums=('189b03c24890b524aa480dc8cb146b3eff0931de3d5b0eb267075cd7270a3999')
 
 build() {
   cd "whyDPI-${pkgver}"
