@@ -152,7 +152,7 @@ jobs:
           python -c "from whydpi.platforms import windows; print('platforms.windows import ok')"
           python -c "from whydpi.system import windivert, dns_redirect_windows; print('system modules import ok')"
 
-      - name: Build whydpi-tray.exe
+      - name: Build whydpi-tray (onedir)
         shell: pwsh
         working-directory: packaging\windows
         run: |
@@ -168,7 +168,15 @@ jobs:
           $icon   = Join-Path $repo "assets\favicon.ico"
           Write-Host "assets src : $assets"
           Write-Host "icon       : $icon"
-          pyinstaller --onefile --windowed --uac-admin `
+          # ``--onedir`` rather than ``--onefile``: WinDivert keeps its
+          # kernel driver file mapped after the userspace handle is
+          # closed, so the onefile bootloader's ``_MEI*`` temp-directory
+          # cleanup races the driver and loses — surfacing as a "Failed
+          # to remove temporary directory" popup every time the tray
+          # exits.  Shipping the runtime alongside the exe inside
+          # ``{app}\_internal\`` eliminates the temp extraction entirely.
+          # Keep this in sync with ``packaging/windows/build.ps1``.
+          pyinstaller --onedir --windowed --uac-admin `
             --log-level=INFO `
             --icon="$icon" `
             --add-data "${assets};whydpi/ui/_assets" `
@@ -230,14 +238,18 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: Build whydpi.exe
+      - name: Build whydpi CLI (onedir)
         shell: pwsh
         working-directory: packaging\windows
         run: |
           $ErrorActionPreference = 'Continue'
           $log = "build\cli-build.log"
           $icon = Join-Path "${env:GITHUB_WORKSPACE}" "assets\favicon.ico"
-          pyinstaller --onefile --console --uac-admin `
+          # Separate ``--distpath build\dist-cli`` so the CLI's
+          # ``_internal\`` tree cannot collide with the tray's under
+          # ``build\dist\whydpi-tray\``.  The installer lays them out
+          # as ``{app}\...`` and ``{app}\cli\...`` to mirror this.
+          pyinstaller --onedir --console --uac-admin `
             --log-level=INFO `
             --icon="$icon" `
             --collect-all whydpi `
@@ -251,7 +263,7 @@ jobs:
             --hidden-import whydpi.net.dns_cache `
             --hidden-import whydpi.cli `
             --name whydpi `
-            --distpath build\dist `
+            --distpath build\dist-cli `
             --workpath build\work `
             --specpath build `
             cli_entry.py 2>&1 | Tee-Object -FilePath $log
@@ -262,46 +274,44 @@ jobs:
 
       - name: Smoke-test the built executables
         shell: pwsh
-        working-directory: packaging\windows\build\dist
+        working-directory: packaging\windows
         run: |
           # Invoking a --uac-admin exe from the GH Actions shell does not
           # return a usable exit code (the UAC broker is involved even on
-          # runners), so we cannot rely on `whydpi.exe --help`.  We do two
-          # structural checks that catch the regressions we've actually
-          # seen in the wild:
+          # runners), so we cannot rely on `whydpi.exe --help`.  For
+          # ``--onedir`` builds we do three structural checks:
           #
-          #   1. File exists and has a plausible size (>= 1 MiB — a
-          #      PyInstaller onefile is always several MiB).
-          #   2. The embedded PyInstaller archive actually contains the
-          #      `whydpi.ui.tray` / `whydpi.cli` modules.  We hit a real
-          #      user-facing ModuleNotFoundError when an editable install
-          #      silently produced module-free bundles, so we assert here
-          #      using pyi-archive_viewer in batch mode.
-          $tray = Get-Item .\whydpi-tray.exe
-          $cli  = Get-Item .\whydpi.exe
+          #   1. Both exes exist at their expected paths.
+          #   2. Each exe has a plausible size (>= 512 KiB — onedir
+          #      bootstraps are smaller than onefile).
+          #   3. The ``_internal\`` runtime next to each exe contains
+          #      our package modules (compiled .pyc under
+          #      ``_internal\whydpi\``).  This catches the editable-
+          #      install regression where PyInstaller silently produced
+          #      module-free bundles.
+          $tray    = Get-Item build\dist\whydpi-tray\whydpi-tray.exe
+          $cli     = Get-Item build\dist-cli\whydpi\whydpi.exe
+          $trayInt = "build\dist\whydpi-tray\_internal"
+          $cliInt  = "build\dist-cli\whydpi\_internal"
           Write-Host ("whydpi-tray.exe : {0} bytes" -f $tray.Length)
           Write-Host ("whydpi.exe      : {0} bytes" -f $cli.Length)
-          if ($tray.Length -lt 1048576) { throw "whydpi-tray.exe suspiciously small" }
-          if ($cli.Length  -lt 1048576) { throw "whydpi.exe suspiciously small"      }
+          if ($tray.Length -lt 524288) { throw "whydpi-tray.exe suspiciously small" }
+          if ($cli.Length  -lt 524288) { throw "whydpi.exe suspiciously small"      }
 
-          Write-Host "---- content check (pyi-archive_viewer) ----"
-          # pyi-archive_viewer -b dumps all TOC entries, one per line.
-          # If our package isn't in there, grep will exit non-zero.
-          $trayToc = & pyi-archive_viewer -b -r .\whydpi-tray.exe 2>&1 | Out-String
-          $cliToc  = & pyi-archive_viewer -b -r .\whydpi.exe      2>&1 | Out-String
-          foreach ($mod in @('whydpi.ui.tray', 'whydpi.ui.autostart', 'whydpi.ui.consent', 'whydpi.ui.status_window', 'whydpi.platforms.windows', 'whydpi.system.windivert', 'whydpi.system.dns_redirect_windows', 'whydpi.net.dns', 'whydpi.net.dns_cache')) {
-            if ($trayToc -notmatch [regex]::Escape($mod)) {
-              Write-Host "::error title=Bundle check::whydpi-tray.exe missing module $mod"
-              throw "whydpi-tray.exe does not bundle $mod"
+          foreach ($probe in @(
+            @{ root = $trayInt; modules = @('whydpi\ui\tray', 'whydpi\ui\autostart', 'whydpi\ui\consent', 'whydpi\ui\status_window', 'whydpi\platforms\windows', 'whydpi\system\windivert', 'whydpi\system\dns_redirect_windows', 'whydpi\net\dns', 'whydpi\net\dns_cache'); label = 'tray' },
+            @{ root = $cliInt;  modules = @('whydpi\cli', 'whydpi\platforms\windows');                                                                                                                                                                                                                                label = 'cli'  }
+          )) {
+            foreach ($mod in $probe.modules) {
+              $pyc = Get-ChildItem -Path $probe.root -Recurse -Filter "$((Split-Path $mod -Leaf)).*.pyc" -ErrorAction SilentlyContinue |
+                     Where-Object { $_.FullName -match [regex]::Escape($mod) }
+              if (-not $pyc) {
+                Write-Host "::error title=Bundle check::$($probe.label) missing module $mod"
+                throw "$($probe.label) bundle does not contain $mod"
+              }
             }
           }
-          foreach ($mod in @('whydpi.cli', 'whydpi.platforms.windows')) {
-            if ($cliToc -notmatch [regex]::Escape($mod)) {
-              Write-Host "::error title=Bundle check::whydpi.exe missing module $mod"
-              throw "whydpi.exe does not bundle $mod"
-            }
-          }
-          Write-Host "smoke OK — both exes contain the expected whydpi modules"
+          Write-Host "smoke OK — both onedir bundles contain the expected whydpi modules"
 
       - name: Compile Inno Setup installer
         shell: pwsh
@@ -343,16 +353,32 @@ jobs:
 
       - name: Collect artefacts
         shell: pwsh
+        env:
+          WHYDPI_VERSION: ${{ steps.ver.outputs.version }}
         run: |
           New-Item -ItemType Directory -Force -Path out | Out-Null
-          Copy-Item packaging\windows\build\dist\whydpi-tray.exe out\
-          Copy-Item packaging\windows\build\dist\whydpi.exe      out\
-          Copy-Item packaging\windows\dist\*.exe                 out\
+          # Portable / Scoop-friendly zip of the tray onedir tree.  Scoop
+          # extracts it into ``%USERPROFILE%\scoop\apps\whydpi\current\``
+          # and uses ``extract_dir = whydpi-tray`` to flatten the top
+          # folder so ``whydpi-tray.exe`` ends up directly under
+          # ``current\``.
+          $ver = $env:WHYDPI_VERSION
+          $trayZip = "out\whydpi-tray-$ver-win64.zip"
+          $cliZip  = "out\whydpi-cli-$ver-win64.zip"
+          Compress-Archive -Path packaging\windows\build\dist\whydpi-tray `
+                           -DestinationPath $trayZip -Force
+          Compress-Archive -Path packaging\windows\build\dist-cli\whydpi `
+                           -DestinationPath $cliZip  -Force
+          Copy-Item packaging\windows\dist\*.exe out\
+          Write-Host "=== artefacts ==="
+          Get-ChildItem out | Format-Table Name,Length,LastWriteTime
 
       - uses: actions/upload-artifact@v4
         with:
           name: windows-installer
-          path: out\*.exe
+          path: |
+            out\*.exe
+            out\*.zip
           retention-days: 7
 
   # --------------------------------------------------------------------------
@@ -387,7 +413,7 @@ jobs:
           echo "GITHUB_REPOSITORY: ${GITHUB_REPOSITORY:-unset}"
           echo "TAG: $TAG"
 
-          mapfile -t FILES < <(ls dist/*.deb dist/*.rpm dist/*.exe 2>/dev/null)
+          mapfile -t FILES < <(ls dist/*.deb dist/*.rpm dist/*.exe dist/*.zip 2>/dev/null)
           if [ "${#FILES[@]}" -eq 0 ]; then
             echo "::error::no artefacts to upload" >&2
             exit 1
@@ -404,7 +430,7 @@ jobs:
           | If you run... | Grab this asset |
           |---|---|
           | **Windows 10 / 11** (normal user) | **`whydpi-VERSION-setup.exe`** — one-click installer with Start Menu shortcut, autostart and uninstaller |
-          | **Windows + Scoop / portable** | `whydpi-tray.exe` — standalone tray app (no installer) |
+          | **Windows + Scoop / portable** | `whydpi-tray-VERSION-win64.zip` — unzip and run `whydpi-tray.exe` (no installer, no autostart) |
           | **Arch / Manjaro / EndeavourOS** | `yay -S whydpi` (AUR) — do *not* download anything here |
           | **Debian / Ubuntu / Mint** | `whydpi_VERSION-1_all.deb` |
           | **Fedora / Nobara** | `whydpi-VERSION-1.fcXX.noarch.rpm` |
@@ -476,9 +502,9 @@ jobs:
           set -euo pipefail
           TAG="${{ github.event.inputs.tag || github.ref_name }}"
           VER="${TAG#v}"
-          EXE="windows-assets/whydpi-tray.exe"
-          [ -f "$EXE" ] || { echo "missing $EXE"; exit 1; }
-          HASH=$(sha256sum "$EXE" | awk '{print $1}')
+          ZIP="windows-assets/whydpi-tray-${VER}-win64.zip"
+          [ -f "$ZIP" ] || { echo "missing $ZIP"; ls -la windows-assets; exit 1; }
+          HASH=$(sha256sum "$ZIP" | awk '{print $1}')
           python3 - "$VER" "$HASH" <<'PY'
           import json, pathlib, sys
           ver, hsh = sys.argv[1], sys.argv[2]
@@ -486,9 +512,15 @@ jobs:
           data = json.loads(p.read_text(encoding="utf-8"))
           data["version"] = ver
           data["architecture"]["64bit"]["url"] = (
-              f"https://github.com/byrdltd/whyDPI/releases/download/v{ver}/whydpi-tray.exe"
+              f"https://github.com/byrdltd/whyDPI/releases/download/v{ver}/whydpi-tray-{ver}-win64.zip"
           )
           data["architecture"]["64bit"]["hash"] = hsh
+          data["architecture"]["64bit"]["extract_dir"] = "whydpi-tray"
+          if "autoupdate" in data:
+              data["autoupdate"]["architecture"]["64bit"]["url"] = (
+                  f"https://github.com/byrdltd/whyDPI/releases/download/v$version/whydpi-tray-$version-win64.zip"
+              )
+              data["autoupdate"]["architecture"]["64bit"]["extract_dir"] = "whydpi-tray"
           p.write_text(json.dumps(data, indent=4) + "\n", encoding="utf-8")
           print(f"bucket/whydpi.json -> {ver} / {hsh[:12]}...")
           PY

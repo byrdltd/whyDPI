@@ -5,8 +5,9 @@
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/byrdltd/whyDPI/releases/download/v0.3.0/whydpi-tray.exe",
-            "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+            "url": "https://github.com/byrdltd/whyDPI/releases/download/v0.3.0/whydpi-tray-0.3.0-win64.zip",
+            "hash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "extract_dir": "whydpi-tray"
         }
     },
     "shortcuts": [
@@ -30,7 +31,8 @@
     "autoupdate": {
         "architecture": {
             "64bit": {
-                "url": "https://github.com/byrdltd/whyDPI/releases/download/v$version/whydpi-tray.exe"
+                "url": "https://github.com/byrdltd/whyDPI/releases/download/v$version/whydpi-tray-$version-win64.zip",
+                "extract_dir": "whydpi-tray"
             }
         }
     }
