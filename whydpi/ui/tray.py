@@ -200,6 +200,105 @@ def _is_admin_windows() -> bool:
         return False
 
 
+# Windows single-instance enforcement ---------------------------------------
+#
+# Two tray processes ruin Windows in subtle, user-visible ways:
+#
+# * Both open WinDivert handles on the same filters (TCP/443, UDP/443,
+#   UDP/53).  WinDivert delivers every matching packet to *one* handle
+#   at a time in priority order; with equal priorities the choice is
+#   effectively non-deterministic.  The QUIC reject path needs the
+#   outbound UDP/443 packet *and* the synthetic ICMP reply to traverse
+#   the same handle, otherwise the injection races with the second
+#   process's drop/passthrough and Chromium/Electron-based desktop
+#   apps never see ECONNREFUSED and keep hanging on the
+#   "Starting..." splash.
+# * Both hijackers send duplicate DoH queries for the same UDP/53
+#   question and inject two synthetic replies — the second one arrives
+#   after the resolver already cached the first, but on Windows the
+#   stray datagram raises "unexpected source" warnings in some
+#   resolvers.
+# * The onefile PyInstaller bootloader is unhappy when two copies of
+#   the exe are alive — overlapping ``pydivert`` DLL handles in
+#   ``_MEIxxxx`` temp dirs mean one process's cleanup fails ("Failed
+#   to remove temporary directory" popup) on quit.
+#
+# The first tray that wins ``CreateMutexW(bInitialOwner=TRUE)`` on the
+# ``Local\whyDPI-Tray`` namespace runs the full icon + engine; any
+# subsequent launch (reboot + autostart ONLOGON task firing again,
+# user double-clicking the Start-menu shortcut while the autostart
+# tray is already up) sees ``ERROR_ALREADY_EXISTS`` and exits with a
+# single user-visible toast.  The mutex lives in the "Local\" namespace
+# so different user sessions on the same box (RDP, Fast User Switch)
+# each get their own tray without colliding.
+_SINGLETON_MUTEX = "Local\\whyDPI-Tray"
+
+
+def _acquire_singleton_windows():
+    """Acquire the per-session singleton mutex.
+
+    Returns ``(handle, already_running)``.  ``handle`` is kept alive
+    for the process lifetime (never closed) — the mutex is released
+    automatically when the process dies so we don't need an atexit
+    hook.  ``already_running`` is ``True`` when another whyDPI tray
+    already holds the mutex; the caller should surface a message and
+    exit.
+    """
+    if not IS_WINDOWS:
+        return None, False
+    try:
+        import ctypes  # type: ignore
+        from ctypes import wintypes  # type: ignore
+
+        ERROR_ALREADY_EXISTS = 183
+
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        CreateMutexW = kernel32.CreateMutexW
+        CreateMutexW.argtypes = [ctypes.c_void_p, wintypes.BOOL, wintypes.LPCWSTR]
+        CreateMutexW.restype = wintypes.HANDLE
+        GetLastError = kernel32.GetLastError
+        GetLastError.restype = wintypes.DWORD
+
+        handle = CreateMutexW(None, True, _SINGLETON_MUTEX)
+        err = GetLastError()
+        if not handle:
+            logger.debug("tray: CreateMutex failed (err=%d) — skipping singleton", err)
+            return None, False
+        if err == ERROR_ALREADY_EXISTS:
+            return handle, True
+        return handle, False
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("tray: singleton check skipped: %s", exc)
+        return None, False
+
+
+def _notify_already_running_windows() -> None:
+    """Show a single user-visible toast when a second tray is refused.
+
+    Without feedback the user clicks the Start-menu icon, nothing
+    appears in their tray (because the existing icon was already
+    there), and they conclude whyDPI is broken.  A short MessageBox
+    explains what happened and nudges them to the existing icon.
+    """
+    if not IS_WINDOWS:
+        return
+    try:
+        import ctypes  # type: ignore
+
+        # MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND
+        flags = 0x00000000 | 0x00000040 | 0x00010000
+        ctypes.windll.user32.MessageBoxW(  # type: ignore[attr-defined]
+            None,
+            "whyDPI is already running in the tray (bottom-right of the "
+            "taskbar, next to the clock).  Right-click the shield icon "
+            "to open the menu.",
+            "whyDPI",
+            flags,
+        )
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _make_controller():
     if IS_WINDOWS:
         return _WindowsInProcessController()
@@ -431,6 +530,29 @@ def run() -> int:
     if IS_WINDOWS and not _is_admin_windows():
         return _print_windows_not_admin_and_exit()
 
+    # Acquire the per-session singleton mutex *before* any WinDivert
+    # handle open, consent dialog, or tray icon spawn.  This is the
+    # single biggest user-visible bug fixer on Windows: the installer's
+    # autostart schtask + a user-initiated Start-menu launch + the
+    # Finish-page shellexec could — in the worst case — leave three
+    # elevated whydpi-tray.exe instances racing on the same WinDivert
+    # filters, which in turn broke QUIC → TCP fallback for
+    # Chromium/Electron desktop clients and triggered the
+    # ``_MEIxxxx`` cleanup popup.  Holding the mutex
+    # keeps the first-launched tray authoritative; later launches exit
+    # cleanly with a single informational dialog.
+    _singleton_handle = None
+    if IS_WINDOWS:
+        _singleton_handle, already = _acquire_singleton_windows()
+        if already:
+            logger.info("tray: another whyDPI tray is already running — exiting")
+            _notify_already_running_windows()
+            return 0
+        # Keep the handle alive on the tray module to match the lifetime
+        # of the process; without a reference Python would GC it and
+        # release the mutex, defeating the singleton guarantee.
+        globals()["_TRAY_SINGLETON_HANDLE"] = _singleton_handle
+
     from . import consent as _consent
 
     # True only when the user just clicked through the modal this session —
@@ -456,11 +578,19 @@ def run() -> int:
 
     state = {"running": controller.is_running(), "stopped_by_user": False}
 
+    # Resolved once; version never changes inside a tray session and
+    # the string is read on every title() call below.
+    from .. import __version__ as _tray_version
+
     def current_icon() -> Any:
         return base if state["running"] else gray
 
     def title() -> str:
-        return "whyDPI — running" if state["running"] else "whyDPI — stopped"
+        # Tooltip always carries the version so users can verify which
+        # build is live without opening About — helpful for regression
+        # triage and when support staff ask "what version are you on".
+        suffix = "running" if state["running"] else "stopped"
+        return f"whyDPI v{_tray_version} — {suffix}"
 
     def toggle(_icon, _item) -> None:
         if state["running"]:
@@ -535,9 +665,15 @@ def run() -> int:
                 checked=autostart_check,
             )
         )
+    # Version is attached to About rather than a standalone disabled
+    # entry because KDE/Plasma's DBus StatusNotifier menu renderer
+    # (and some GNOME Shell extensions) drop ``enabled=False`` items
+    # from the visible menu, even though the Gtk backend renders them
+    # greyed out.  Baking the version into an already-enabled entry
+    # guarantees it shows up on every supported backend.
     menu_items.extend([
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("About whyDPI", _about),
+        pystray.MenuItem(f"About whyDPI v{_tray_version}", _about),
         pystray.MenuItem("Acceptable-use & disclaimer", _open_disclaimer),
         pystray.MenuItem("Quit", quit_app),
     ])

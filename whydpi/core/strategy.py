@@ -7,9 +7,13 @@ A strategy is a tuple of (layer, offset, chunk_size).  The previous six named
 modes (``record``, ``header``, ``sni``, ``half``, ``random``, ``chunked``)
 collapse into specific values of these three axes:
 
-* layer    — ``record`` (re-frame as two TLS records) or ``tcp``
-  (single TLS record split across two TCP sends).
-* offset   — integer, ``sni-mid``, ``half``, ``random`` or ``chunked``.
+* layer    — ``record`` (re-frame as two TLS records), ``tcp``
+  (single TLS record split across two TCP sends), or ``decoy`` (emit a
+  short-lived spoofed ClientHello before the real one; the decoy dies
+  en route so only stateful DPI middleboxes on the first few hops
+  observe it — they lock on the decoy's SNI instead of ours).
+* offset   — integer, ``sni-mid``, ``half``, ``random`` or ``chunked``;
+  interpreted as the IP TTL / hop-limit for the ``decoy`` layer.
 * chunk_sz — only for chunked; chunk size in bytes.
 
 Grammar (used by :func:`Strategy.parse`):
@@ -19,6 +23,7 @@ Grammar (used by :func:`Strategy.parse`):
     record:half       record split at payload midpoint
     tcp:sni-mid       TCP-level split at sni midpoint, single TLS record
     chunked:40        TCP-level split every 40 bytes
+    decoy:5           spoof a ClientHello at IP TTL 5 before the real one
     passthrough       no transformation; send as-is
 """
 
@@ -32,7 +37,7 @@ from typing import Iterable, Literal
 from ..net.tls_parser import ClientHelloView
 
 
-Layer = Literal["record", "tcp", "passthrough"]
+Layer = Literal["record", "tcp", "passthrough", "decoy"]
 OffsetKind = Literal["fixed", "sni-mid", "half", "random", "chunked"]
 
 
@@ -46,6 +51,8 @@ class Strategy:
     def label(self) -> str:
         if self.layer == "passthrough":
             return "passthrough"
+        if self.layer == "decoy":
+            return f"decoy:{self.offset_value}"
         if self.offset_kind == "chunked":
             return f"chunked:{self.offset_value}"
         if self.offset_kind == "fixed":
@@ -66,6 +73,21 @@ class Strategy:
             if size < 1:
                 raise ValueError("chunked size must be >= 1")
             return cls(layer="tcp", offset_kind="chunked", offset_value=size)
+
+        if left == "decoy":
+            # TTL is clamped to a sane range (1 hop is the closest local
+            # router, 16 is well past any plausible DPI box on a home
+            # network).  Values outside that window make the decoy
+            # either useless (too low, dies on the host itself) or
+            # dangerous (too high, reaches the origin server and
+            # races the real ClientHello).
+            try:
+                ttl = int(right)
+            except ValueError as exc:
+                raise ValueError(f"decoy TTL must be an integer: {right!r}") from exc
+            if ttl < 1 or ttl > 16:
+                raise ValueError(f"decoy TTL out of range (1-16): {ttl}")
+            return cls(layer="decoy", offset_kind="fixed", offset_value=ttl)
 
         if left not in ("record", "tcp"):
             raise ValueError(f"unknown strategy layer: {left!r}")
@@ -150,6 +172,15 @@ def _chunked(data: bytes, size: int) -> tuple[bytes, ...]:
 
 def build_plan(data: bytes, hello: ClientHelloView, strategy: Strategy) -> FragmentPlan:
     if strategy.layer == "passthrough":
+        return FragmentPlan(strategy=strategy, fragments=(data,), delay_ms=0)
+
+    # The decoy layer does its work out-of-band: the packet shaper
+    # emits a spoofed ClientHello ahead of the real one and then
+    # forwards the real record unchanged.  ``build_plan`` therefore
+    # returns a single-fragment passthrough plan; the shaper's
+    # ``_process_outbound`` handler detects ``layer == "decoy"`` and
+    # performs the decoy injection before forwarding.
+    if strategy.layer == "decoy":
         return FragmentPlan(strategy=strategy, fragments=(data,), delay_ms=0)
 
     payload_len = max(0, len(data) - 5)

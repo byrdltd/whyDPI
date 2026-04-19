@@ -49,21 +49,36 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon";  Description: "{cm:CreateDesktopIcon}";   GroupDescription: "{cm:AdditionalIcons}"
-Name: "autostart";    Description: "Start whyDPI with Windows (runs as SYSTEM via Task Scheduler)"; GroupDescription: "Additional behaviour"; Flags: unchecked
+; "autostart" registers a per-user Task Scheduler entry named
+; "whyDPI Tray" that launches the tray at every logon with the
+; user's already-granted admin token, so the WinDivert driver
+; loads silently without a per-login UAC prompt.  The task runs
+; as the logged-in user (NOT as SYSTEM); a SYSTEM-scoped service
+; would need its own WinDivert handle management and the user's
+; network-profile context, which buys us nothing here.  The tray
+; menu's "Launch on login" toggle writes / deletes the same task,
+; so the two paths stay in sync.  Off by default — we'd rather the
+; user opt in after confirming the app works on their network.
+Name: "autostart";    Description: "Start whyDPI automatically when I sign in to Windows"; GroupDescription: "Additional behaviour"; Flags: unchecked
 
 [Files]
-Source: "build\dist\{#MyExeTray}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "build\dist\{#MyExeCli}";  DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\LICENSE";           DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\README.md";         DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\assets\favicon.ico";DestDir: "{app}"; Flags: ignoreversion
-Source: "..\..\assets\icon-256.png";DestDir: "{app}"; Flags: ignoreversion
+; ``--onedir`` PyInstaller layouts: each exe sits next to its own
+; ``_internal\`` runtime folder.  The tray dir becomes ``{app}``
+; itself (so ``whydpi-tray.exe`` lives at ``{app}\whydpi-tray.exe``);
+; the CLI dir lives under ``{app}\cli\`` to keep the two
+; ``_internal\`` trees from colliding.
+Source: "build\dist\whydpi-tray\*";       DestDir: "{app}";      Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "build\dist-cli\whydpi\*";        DestDir: "{app}\cli";  Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\..\LICENSE";                  DestDir: "{app}";      Flags: ignoreversion
+Source: "..\..\README.md";                DestDir: "{app}";      Flags: ignoreversion
+Source: "..\..\assets\favicon.ico";       DestDir: "{app}";      Flags: ignoreversion
+Source: "..\..\assets\icon-256.png";      DestDir: "{app}";      Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#MyAppName}";            Filename: "{app}\{#MyExeTray}"; IconFilename: "{app}\favicon.ico"
-Name: "{group}\{#MyAppName} (CLI)";      Filename: "{app}\{#MyExeCli}";  IconFilename: "{app}\favicon.ico"
+Name: "{group}\{#MyAppName}";            Filename: "{app}\{#MyExeTray}";    IconFilename: "{app}\favicon.ico"
+Name: "{group}\{#MyAppName} (CLI)";      Filename: "{app}\cli\{#MyExeCli}"; IconFilename: "{app}\favicon.ico"
 Name: "{group}\Uninstall {#MyAppName}";  Filename: "{uninstallexe}"
-Name: "{commondesktop}\{#MyAppName}";    Filename: "{app}\{#MyExeTray}"; IconFilename: "{app}\favicon.ico"; Tasks: desktopicon
+Name: "{commondesktop}\{#MyAppName}";    Filename: "{app}\{#MyExeTray}";    IconFilename: "{app}\favicon.ico"; Tasks: desktopicon
 
 [Run]
 ; Create an elevated scheduled task that launches the tray at login.
@@ -81,9 +96,9 @@ Filename: "{app}\{#MyExeTray}"; Description: "Launch whyDPI"; Flags: shellexec n
 
 [UninstallRun]
 ; Remove the autostart task (ignore failure — user may have deleted it manually).
-Filename: "schtasks.exe"; Parameters: "/Delete /F /TN ""whyDPI Tray"""; Flags: runhidden
+Filename: "schtasks.exe"; Parameters: "/Delete /F /TN ""whyDPI Tray"""; Flags: runhidden; RunOnceId: "DeleteAutostartTask"
 
 ; Restore DNS in case the user uninstalls while the tray is running.
 ; Same shellexec reasoning as above — the CLI exe also carries the
 ; requireAdministrator manifest.
-Filename: "{app}\{#MyExeCli}"; Parameters: "stop"; Flags: shellexec runhidden
+Filename: "{app}\cli\{#MyExeCli}"; Parameters: "stop"; Flags: shellexec runhidden; RunOnceId: "StopEngineOnUninstall"

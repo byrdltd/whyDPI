@@ -1,3 +1,31 @@
+whydpi (0.3.0-1) unstable; urgency=medium
+
+  * Windows single-instance tray: named mutex acquired before WinDivert
+    open; subsequent launches (autostart schtask + Start-menu shortcut)
+    exit cleanly with an informational dialog, fixing the race that
+    previously broke QUIC -> TCP fallback for Chromium/Electron desktop
+    clients on elevated multi-launch.
+  * New decoy:* TLS fragmentation strategy layer: emits a spoofed
+    ClientHello with a low IP TTL so stateful DPI middleboxes within a
+    few hops lock on a benign SNI (RFC 2606 default) and wave the real
+    handshake through.  Three decoy fallbacks (TTL 5/3/7) are added to
+    the default fallback list, exercised only when every userspace
+    strategy fails.
+  * Tray: version string now appears in the status tooltip and the
+    About menu entry on every backend (fixes the disabled-item drop
+    observed on KDE's StatusNotifier menu renderer).
+  * Tray Show status...: subprocess dispatch now uses --show-status
+    instead of -c ... so the frozen Windows exe no longer spawns a
+    duplicate tray icon.
+  * Linux: after the first-run disclaimer accept, the tray now calls
+    controller.start() immediately (polkit) and enables launch-on-login,
+    matching the Windows Finish-page behaviour.
+  * Brand-neutral code comments: third-party desktop-app names removed
+    from source and docs in favour of generic "Chromium/Electron
+    desktop clients" wording.
+
+ -- byrdltd <byrdltd@users.noreply.github.com>  Sun, 19 Apr 2026 20:00:00 +0000
+
 whydpi (0.2.8-1) unstable; urgency=medium
 
   * Windows DNS: replaced the netsh/NRPT-based resolver override with a

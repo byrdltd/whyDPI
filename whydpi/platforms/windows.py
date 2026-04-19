@@ -142,6 +142,7 @@ def _build_runtime(settings: Settings) -> _Runtime:
         block_quic=settings.net.block_quic,
         probe_timeout_s=settings.tls.probe_timeout_s,
         success_min_bytes=settings.tls.success_min_bytes,
+        decoy_sni=settings.tls.decoy_sni,
     )
 
     dns, doh_clients = _build_dns_hijacker(settings, dns_cache)

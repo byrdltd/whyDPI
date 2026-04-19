@@ -71,6 +71,12 @@ from ..net.tls_parser import (
     looks_like_client_hello,
     parse_client_hello,
 )
+
+# Default decoy SNI used when the shaper is instantiated without an
+# explicit value (RFC 2606 reserved name).  The real runtime path
+# always passes ``decoy_sni`` through from ``settings.tls.decoy_sni``,
+# so this fallback only matters for unit tests / notebooks.
+_DEFAULT_DECOY_SNI = "www.example.com"
 from ._trace import trace, trace_enabled
 
 logger = logging.getLogger(__name__)
@@ -190,6 +196,7 @@ class PacketShaper:
         block_quic: bool = True,
         probe_timeout_s: float = 3.0,
         success_min_bytes: int = 6,
+        decoy_sni: str = _DEFAULT_DECOY_SNI,
     ) -> None:
         self._raw_default = default_strategy
         self._raw_fallbacks = tuple(fallbacks)
@@ -199,6 +206,15 @@ class PacketShaper:
         self._block_quic = bool(block_quic)
         self._probe_timeout_s = float(probe_timeout_s)
         self._success_min_bytes = int(success_min_bytes)
+        # Validate and pre-build the decoy ClientHello payload once so
+        # every injection path pays only the memcpy cost.  The synthesis
+        # call raises on garbage input, which we want to surface at
+        # engine-start rather than on the first live handshake packet.
+        decoy_host = (decoy_sni or _DEFAULT_DECOY_SNI).strip().strip(".").lower()
+        if not decoy_host:
+            decoy_host = _DEFAULT_DECOY_SNI
+        self._decoy_sni = decoy_host
+        self._decoy_payload = build_minimal_client_hello(decoy_host)
 
         self._handle = None  # type: ignore[var-annotated]
         self._quic_handle = None  # type: ignore[var-annotated]
@@ -293,9 +309,9 @@ class PacketShaper:
 
         Silently dropping QUIC segments (our prior behaviour) forces
         every QUIC-capable client to wait out its own HTTP/3 timeout
-        before retrying over TCP — which, for apps with conservative
-        timeouts like the Discord desktop Electron shell, looks like
-        a permanent hang on the "Starting..." splash.
+        before retrying over TCP — which, for Chromium/Electron
+        desktop apps with conservative fallback timeouts, looks like
+        a permanent hang on the startup splash.
 
         Instead we synthesise and inject an ICMP "Destination
         Unreachable / Port Unreachable" reply aimed back at the
@@ -452,8 +468,8 @@ class PacketShaper:
             # injected" but connected UDP probes timed out instead of
             # raising WSAECONNRESET.  With the flag Chromium's QUIC
             # fallback fires within one RTT, so apps that default to
-            # HTTP/3 (Discord Electron, Chrome) no longer hang on a
-            # 3-10 s HTTP/3 timeout before trying TCP.
+            # HTTP/3 (Chromium and Electron-based clients) no longer
+            # hang on a 3-10 s HTTP/3 timeout before trying TCP.
             pkt = pydivert.Packet(
                 raw=icmp_raw,
                 interface=getattr(original, "interface", None),
@@ -494,7 +510,7 @@ class PacketShaper:
                     if trace_enabled():
                         # A "SYN without ACK" is a brand-new connection
                         # attempt; tracing it tells an observer exactly
-                        # which tuples Discord (or any app) is opening
+                        # which tuples the monitored client is opening
                         # before any TLS happens.  Payload-bearing
                         # outbound packets are picked up by the CHLO
                         # branch of _process_outbound and traced there.
@@ -647,30 +663,41 @@ class PacketShaper:
         # trailing bytes as the start of a new record (garbage content
         # type) and emit an alert or RST.  Modern browsers with
         # post-quantum ``key_share`` (Firefox NSS, Chromium BoringSSL)
-        # and the Electron shell used by Discord routinely produce
+        # and Electron shells built on Chromium routinely produce
         # 2 KB+ ClientHellos that are split across two TCP segments,
-        # so this path is hit constantly in practice.  The safe fix is
-        # to pass the packet through untouched and let the record
-        # traverse the DPI box intact; the userspace proxy on Linux
-        # reframes end-to-end instead, and the packet shaper cannot
-        # reproduce that without per-connection CH reassembly state.
+        # so this path is hit constantly in practice.
+        #
+        # Packet-layer reassembly is expensive and fragile, so instead
+        # of reframing we neutralise the most common DPI middlebox on
+        # this path with a TTL-limited decoy ClientHello injected on
+        # the same 4-tuple *before* the real record leaves the host.
+        # The decoy carries a benign SNI and an IP TTL low enough to
+        # expire within the first few hops; any stateful DPI box in
+        # that window observes the decoy, locks its per-flow state on
+        # the decoy's SNI, and then waves the real record through
+        # without re-inspecting it.  The decoy itself dies well before
+        # the origin server, so the real handshake is unaffected when
+        # the DPI is absent or lenient.
         try:
             claimed_record_len = int.from_bytes(payload[3:5], "big")
         except Exception:  # noqa: BLE001
             claimed_record_len = -1
         if claimed_record_len >= 0 and 5 + claimed_record_len > len(payload):
+            decoy_ok = self._inject_decoy_hello(packet, ttl=5)
             logger.debug(
                 "multi-segment CH (record claims %dB, packet carries %dB); "
-                "passthrough to preserve TLS record framing",
+                "passthrough with TTL decoy=%s",
                 claimed_record_len, len(payload) - 5,
+                "ok" if decoy_ok else "skipped",
             )
             if trace_enabled():
                 trace(
                     "tcp/443 CHLO multi-seg passthrough "
-                    "%s:%s -> %s:%s record=%dB carried=%dB",
+                    "%s:%s -> %s:%s record=%dB carried=%dB decoy=%s",
                     packet.src_addr, packet.src_port,
                     packet.dst_addr, packet.dst_port,
                     claimed_record_len, len(payload) - 5,
+                    "ok" if decoy_ok else "skipped",
                 )
             self._send_with_rewrite_outbound(packet)
             return
@@ -708,6 +735,24 @@ class PacketShaper:
                 len(payload), strategy.label(),
                 "hit" if cached is not None else "miss",
             )
+
+        # Explicit decoy strategy: emit the low-TTL spoofed CH, then
+        # forward the real record unchanged.  Passive inbound
+        # observation (RST vs ServerHello) still feeds the strategy
+        # cache, so a decoy that fails for a given SNI is eventually
+        # replaced by a successful record-split candidate the next
+        # time ``_maybe_kick_discovery`` runs.
+        if strategy.layer == "decoy":
+            ttl = int(strategy.offset_value or 5)
+            ok = self._inject_decoy_hello(packet, ttl=ttl)
+            if trace_enabled():
+                trace(
+                    "tcp/443 CHLO decoy sni=%s ttl=%d %s",
+                    sni, ttl, "injected" if ok else "skipped",
+                )
+            self._send_with_rewrite_outbound(packet)
+            self._track(packet, sni, strategy.label())
+            return
 
         # Optimistic parallel discovery: if this SNI has never been
         # probed, kick a race of every fallback strategy in the
@@ -781,6 +826,70 @@ class PacketShaper:
                 self._conn_key_outbound(packet), expected_delta,
             )
         self._track(packet, sni, strategy.label())
+
+    def _inject_decoy_hello(self, original, *, ttl: int) -> bool:
+        """Inject a spoofed ClientHello on the original 4-tuple with a
+        capped IP TTL so the packet expires before reaching the peer.
+
+        A stateful DPI middlebox sitting within ``ttl`` hops of the
+        host will still observe the decoy, parse its benign SNI
+        (:attr:`_decoy_sni`), and lock the per-flow state machine
+        onto it.  The real ClientHello that follows is then waved
+        through without re-inspection.  If no such middlebox exists
+        — or if the decoy dies on the host itself — the real
+        handshake is unaffected because the decoy bytes never reach
+        the origin server.
+
+        The decoy reuses the captured packet's 4-tuple and base TCP
+        sequence number; the server ignores it as a duplicate or
+        never sees it at all.  Returns ``True`` on successful
+        injection, ``False`` otherwise (caller treats that as "no
+        decoy, pass the real record through anyway").
+        """
+        import pydivert  # deferred: only available on Windows
+
+        handle = self._handle
+        if handle is None:
+            return False
+
+        decoy_payload = self._decoy_payload
+        if not decoy_payload:
+            return False
+
+        safe_ttl = max(1, min(int(ttl), 32))
+        try:
+            pkt = pydivert.Packet(
+                raw=bytes(original.raw),
+                interface=getattr(original, "interface", None),
+                direction=getattr(original, "direction", None),
+            )
+            pkt.payload = decoy_payload
+            # Replace the IP TTL / hop-limit so the decoy cannot reach
+            # the origin.  pydivert exposes one of ``ipv4`` / ``ipv6``
+            # depending on the captured packet's family; guard against
+            # either being unavailable (malformed capture).
+            ipv4 = getattr(pkt, "ipv4", None)
+            ipv6 = getattr(pkt, "ipv6", None)
+            if ipv6 is not None:
+                ipv6.hop_limit = safe_ttl
+            elif ipv4 is not None:
+                ipv4.ttl = safe_ttl
+            else:
+                return False
+            # Some stateful inspectors only run parser logic on
+            # PSH-flagged segments.  Setting PSH keeps our decoy in
+            # their hot path without affecting the real record that
+            # follows (whose PSH flag is preserved by the original
+            # packet's own send below).
+            try:
+                pkt.tcp.psh = True
+            except AttributeError:
+                pass
+            handle.send(pkt)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("decoy inject failed (ttl=%d): %s", safe_ttl, exc)
+            return False
 
     def _inject_fragments(self, original, fragments: tuple[bytes, ...]) -> None:
         """Re-inject *fragments* as ``len(fragments)`` distinct packets.
@@ -987,20 +1096,41 @@ class PacketShaper:
         try:
             hello = build_minimal_client_hello(sni)
             view = parse_client_hello(hello)
-            candidates = order_candidates(
+            ordered = order_candidates(
                 None, self._raw_default, self._raw_fallbacks
             )
+            # Decoy strategies operate at the IP layer (TTL control).
+            # A Python socket can't set per-segment TTL on the
+            # handshake packet without raw-socket privileges we don't
+            # hold here, so active discovery simply skips them and the
+            # shaper treats them as a passive-only last resort:
+            # when no userspace strategy wins the race, we seed the
+            # cache with the first decoy in the fallback list and the
+            # next live connection from this SNI exercises it.
+            active_candidates = tuple(s for s in ordered if s.layer != "decoy")
+            decoy_fallbacks = tuple(s for s in ordered if s.layer == "decoy")
             logger.info(
                 "active discovery sni=%s dest=%s:%d candidates=%s (parallel race)",
                 sni, dest_ip, dest_port,
-                ",".join(s.label() for s in candidates),
+                ",".join(s.label() for s in active_candidates),
             )
+            if not active_candidates:
+                # Only decoys configured; seed the cache directly.
+                if decoy_fallbacks:
+                    seed = decoy_fallbacks[0]
+                    self._cache.record_success(sni, seed.label())
+                    logger.warning(
+                        "active discovery sni=%s: no userspace candidates; "
+                        "seeded %s as packet-layer fallback",
+                        sni, seed.label(),
+                    )
+                return
             result = discover_parallel(
                 dest_ip=dest_ip,
                 dest_port=dest_port,
                 hello_bytes=hello,
                 hello_view=view,
-                candidates=candidates,
+                candidates=active_candidates,
                 proxy_mark=0,  # unused on Windows (no SO_MARK)
                 timeout_s=self._probe_timeout_s,
                 success_min_bytes=self._success_min_bytes,
@@ -1025,11 +1155,27 @@ class PacketShaper:
                 except OSError:
                     pass
             if result.strategy is None:
-                logger.warning(
-                    "active discovery sni=%s: NO STRATEGY  attempts=%s",
-                    sni,
-                    ",".join(f"{lbl}:{reason}" for lbl, reason in result.attempts),
-                )
+                if decoy_fallbacks:
+                    # Every userspace strategy failed — seed the cache
+                    # with a decoy so the next live CH injects a
+                    # TTL-limited spoofed pre-record.  Strict
+                    # middleboxes that RST every record-split variant
+                    # are the primary audience for this branch.
+                    seed = decoy_fallbacks[0]
+                    self._cache.record_success(sni, seed.label())
+                    logger.warning(
+                        "active discovery sni=%s: no userspace winner "
+                        "(attempts=%s); seeded %s as packet-layer fallback",
+                        sni,
+                        ",".join(f"{lbl}:{reason}" for lbl, reason in result.attempts),
+                        seed.label(),
+                    )
+                else:
+                    logger.warning(
+                        "active discovery sni=%s: NO STRATEGY  attempts=%s",
+                        sni,
+                        ",".join(f"{lbl}:{reason}" for lbl, reason in result.attempts),
+                    )
                 return
             # Write the raw-layer label (e.g. "record:sni-mid") to the
             # cache so a future _select_strategy re-applies the remap and

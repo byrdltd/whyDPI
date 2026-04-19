@@ -35,7 +35,7 @@ From a Developer PowerShell with Python 3.11+ and Inno Setup 6 installed:
 
 ```powershell
 # Set the version the installer stamps everywhere.
-$env:WHYDPI_VERSION = "0.2.8"
+$env:WHYDPI_VERSION = "0.3.0"
 
 # Build the two exes into packaging\windows\build\dist\
 pyinstaller --onefile --windowed --uac-admin `
@@ -86,8 +86,8 @@ at INFO so a standard `-v`-less run shows them:
 | DoH upstream result                    | `udp/53 DoH primary ok example.com A len=72B`                            |
 | Synthetic reply injected               | `udp/53 reply injected 10.0.0.5 <- 8.8.8.8:53 len=72B`                   |
 
-Typical debugging recipe for an app that hangs on startup (Discord
-desktop, Steam, …):
+Typical debugging recipe for an app that hangs on startup
+(Chromium/Electron desktop clients, game launchers, …):
 
 ```powershell
 # Stop the installed service / tray, then in an elevated PowerShell:
@@ -116,7 +116,7 @@ event), so leaving the code in production is safe.
   cached *before* whyDPI started.  Flushing the shared resolver cache
   is also an Administrator-only operation.
 
-Unlike earlier versions, whyDPI 0.2.8+ does **not** run `netsh` or
+Unlike earlier versions, whyDPI 0.2.8+ does not run `netsh` or
 install any NRPT rule — all DNS work is transient and lives at the
 packet layer.  That means a crash, a kill -9 or a `systemctl stop`
 leaves the OS's persistent DNS configuration **completely untouched**.

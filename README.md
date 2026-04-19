@@ -70,6 +70,7 @@ A strategy is a tuple `(layer, offset)`:
 | `record:half`    | Same, split at the payload midpoint |
 | `tcp:sni-mid`    | Keep one TLS record, split the TCP send at the SNI midpoint |
 | `chunked:N`      | Split the raw bytes into N-byte TCP chunks |
+| `decoy:N`        | Windows-only packet layer. Inject a spoofed ClientHello for an innocuous SNI with IP TTL = N so it is dropped before reaching the server, polluting middlebox state before the real handshake. Requires WinDivert. |
 | `passthrough`    | Forward unchanged (used automatically for SNIs that break under any strategy) |
 
 ## Installation
@@ -130,8 +131,13 @@ Two installation options, pick whichever fits your workflow:
 
 **Installer (recommended)** — double-click `whydpi-*-setup.exe` from the
 [Releases page](https://github.com/byrdltd/whyDPI/releases).  The
-installer registers Start-menu shortcuts and optionally creates an
-elevated Task Scheduler entry for autostart at login.
+installer registers Start-menu shortcuts and offers an optional
+**"Start whyDPI automatically when I sign in to Windows"** checkbox
+(unchecked by default).  Enabling it creates a per-user Task Scheduler
+entry that re-uses the admin token you already granted during install,
+so the tray launches silently at each login without re-prompting for
+UAC.  You can toggle the same behaviour anytime from the tray's
+**Launch on login** menu entry.
 
 **Scoop** — no account, no manual download, auto-update on `scoop
 update`:
@@ -149,6 +155,31 @@ whyDPI**, browse, done.
 The Windows build uses packet-layer TLS fragmentation rather than a
 userspace proxy; behaviour is otherwise identical to the Linux build
 (per-SNI strategy discovery, session-only cache, clean shutdown).
+
+#### About the "Unknown publisher" / SmartScreen warning
+
+whyDPI Windows binaries are **not yet code-signed** (Authenticode
+signing requires a paid certificate we haven't sourced for this
+educational project).  Because of that, both UAC and SmartScreen
+flag a fresh download with a warning:
+
+* **UAC**: *"Unknown publisher. Do you want to allow this app to make
+  changes to your device?"* — click **Yes** to continue.
+* **SmartScreen**: *"Windows protected your PC"* — click
+  **More info** then **Run anyway**.
+
+Only install binaries downloaded from the official GitHub Releases
+page linked above.  Every release ships a `SHA256SUMS.txt` asset;
+you can verify your download with:
+
+```powershell
+Get-FileHash .\whydpi-0.3.0-setup.exe -Algorithm SHA256
+# compare the value to the line in SHA256SUMS.txt
+```
+
+A future release will introduce a signed build (tracking
+[issue #TBD]) which will silence both warnings.  Until then, hash
+verification is the authoritative integrity check.
 
 ## Configuration
 
@@ -169,7 +200,9 @@ default_strategy = "record:2"
 fallback_strategies = [
     "record:2", "record:1", "record:sni-mid",
     "tcp:sni-mid", "record:half", "chunked:40",
+    "decoy:5", "decoy:3", "decoy:7",   # Windows-only, ignored on Linux
 ]
+decoy_sni = "www.example.com"          # innocuous SNI used by decoy:* (Windows)
 probe_timeout_s = 3.0
 success_min_bytes = 6
 

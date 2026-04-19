@@ -1,0 +1,25 @@
+# Normalise everything to LF in the repo so Windows editors that default
+# to CRLF on save do not produce noise-only diffs every time a file is
+# touched.  Individual binary assets are flagged explicitly below so git
+# never tries to auto-detect and munge their bytes.
+* text=auto eol=lf
+
+# Binary assets — never normalise.
+*.png  binary
+*.ico  binary
+*.pdf  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+
+# Shell scripts must end with LF on every platform.
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# Windows-native artefacts: keep CRLF so Notepad, the Inno Setup compiler
+# and PowerShell ISE render them without mojibake.
+*.ps1   text eol=crlf
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.iss   text eol=crlf

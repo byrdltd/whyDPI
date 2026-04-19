@@ -78,6 +78,17 @@ class TLSSettings:
     default_strategy: str = "record:2"
     # Ordered fallbacks for runtime discovery.  Order matters: lightest to
     # heaviest.
+    #
+    # The ``decoy:*`` entries are a separate family tested only as a
+    # packet-layer last resort — active discovery cannot exercise them
+    # from a Python socket (they require raw IP-TTL control) and they
+    # are therefore filtered out of the parallel race in the shaper.
+    # When every userspace strategy fails for a given SNI the shaper
+    # seeds the cache with the first surviving ``decoy:*`` entry so
+    # the next live connection tries the TTL-limited pre-pollution
+    # trick.  Common Turkish fiber DPI boxes live 3-5 hops from a
+    # home router, so the TTLs cover that window plus a little
+    # headroom in either direction.
     fallback_strategies: tuple[str, ...] = (
         "record:2",
         "record:1",
@@ -85,6 +96,9 @@ class TLSSettings:
         "tcp:sni-mid",
         "record:half",
         "chunked:40",
+        "decoy:5",
+        "decoy:3",
+        "decoy:7",
     )
     # Connection attempt timeout during discovery.
     probe_timeout_s: float = 3.0
@@ -99,6 +113,14 @@ class TLSSettings:
     # Hosts for which the ClientHello is forwarded unchanged.  Runtime-learned;
     # user can pre-seed via config.
     user_passthrough_sni: tuple[str, ...] = ()
+    # Decoy SNI emitted by ``decoy:*`` strategies.  Picked to be an
+    # IANA-reserved hostname (RFC 2606) that is guaranteed not to be
+    # on any ISP blocklist and whose SNI label fits in a 60-byte
+    # synthetic ClientHello — small decoys travel further before
+    # the TTL expires, maximising the chance the DPI middlebox sees
+    # them.  Overridable through the config file or the
+    # ``WHYDPI_DECOY_SNI`` environment variable.
+    decoy_sni: str = "www.example.com"
 
 
 @dataclass(frozen=True)
@@ -178,7 +200,7 @@ def _merge_dns(base: DNSSettings, data: dict) -> DNSSettings:
 
 def _merge_tls(base: TLSSettings, data: dict) -> TLSSettings:
     changes: dict = {}
-    for key in ("default_strategy", "cache_path"):
+    for key in ("default_strategy", "cache_path", "decoy_sni"):
         if key in data:
             changes[key] = data[key]
     for key in ("proxy_port", "proxy_mark", "success_min_bytes"):
@@ -229,6 +251,7 @@ def _apply_env(s: Settings) -> Settings:
             tuple(x.lower().lstrip(".") for x in (_env_tuple("PASSTHROUGH_SNI") or ()))
             or s.tls.user_passthrough_sni
         ),
+        decoy_sni=_env("DECOY_SNI", s.tls.decoy_sni),
     )
 
     net = replace(

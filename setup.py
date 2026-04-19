@@ -13,7 +13,7 @@ with open("README.md", "r", encoding="utf-8") as f:
 
 setup(
     name="whydpi",
-    version="0.2.8",
+    version="0.3.0",
     author="whyDPI Contributors",
     description="Educational DPI bypass tool for research purposes",
     long_description=long_description,
@@ -21,7 +21,7 @@ setup(
     url="https://github.com/byrdltd/whyDPI",
     packages=find_packages(),
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "Intended Audience :: Education",
         "Intended Audience :: Developers",
         "Intended Audience :: Science/Research",
@@ -30,11 +30,12 @@ setup(
         "Topic :: System :: Networking",
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
         "Operating System :: POSIX :: Linux",
+        "Operating System :: Microsoft :: Windows",
     ],
     python_requires=">=3.10",
     install_requires=[

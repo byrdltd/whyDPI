@@ -103,5 +103,19 @@ def show_status_window(cache_file: Path) -> None:
     if not rows:
         tree.insert("", "end", values=("—", "No entries yet", "—", "—", "—"))
 
-    tk.Button(root, text="Close", command=root.destroy).pack(pady=8)
+    tk.Button(root, text="Close", command=root.destroy).pack(pady=(8, 2))
+
+    # Small read-only version footer so users can confirm which build
+    # produced the strategy cache they are looking at without hunting
+    # through the log — helpful when diagnosing regressions across
+    # packaged releases.
+    from .. import __version__ as _version
+
+    tk.Label(
+        root,
+        text=f"whyDPI v{_version}",
+        font=("sans-serif", 8),
+        fg="#666666",
+    ).pack(pady=(0, 6))
+
     root.mainloop()
