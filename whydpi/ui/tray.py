@@ -229,6 +229,12 @@ def _show_status(_icon, _item) -> None:
     pystray invokes menu callbacks on a worker thread; Tk is not thread-safe
     on X11/Wayland, so we spawn a fresh interpreter — Tk's main loop runs
     on that process's main thread.
+
+    On Windows, a PyInstaller-built ``whydpi-tray.exe`` does **not** behave
+    like ``python.exe -c ...``: the bootloader ignores ``-c`` and restarts
+    the tray entry point, which spawns a **second** tray icon.  Use the
+    dedicated ``--show-status`` branch in :func:`run` instead (and
+    ``python -m whydpi.ui.tray --show-status …`` for unfrozen installs).
     """
     import subprocess
 
@@ -241,16 +247,30 @@ def _show_status(_icon, _item) -> None:
     if not IS_WINDOWS:
         popen_kw["close_fds"] = True
     try:
-        subprocess.Popen(
-            [
-                sys.executable,
-                "-c",
-                "import os; from pathlib import Path; "
-                "from whydpi.ui.status_window import show_status_window; "
-                "show_status_window(Path(os.environ['WHYDPI_STATUS_CACHE']))",
-            ],
-            **popen_kw,
-        )
+        if IS_WINDOWS:
+            # Frozen one-file exe: ``-c`` is not honoured — see docstring.
+            if getattr(sys, "frozen", False):
+                cmd = [sys.executable, "--show-status", str(cache_p)]
+            else:
+                cmd = [
+                    sys.executable,
+                    "-m",
+                    "whydpi.ui.tray",
+                    "--show-status",
+                    str(cache_p),
+                ]
+            subprocess.Popen(cmd, **popen_kw)
+        else:
+            subprocess.Popen(
+                [
+                    sys.executable,
+                    "-c",
+                    "import os; from pathlib import Path; "
+                    "from whydpi.ui.status_window import show_status_window; "
+                    "show_status_window(Path(os.environ['WHYDPI_STATUS_CACHE']))",
+                ],
+                **popen_kw,
+            )
     except OSError as exc:
         logger.warning("tray: could not open status window: %s", exc)
 
@@ -390,6 +410,14 @@ def _print_windows_not_admin_and_exit() -> int:
 # ---------------------------------------------------------------------------
 
 def run() -> int:
+    # Child process for "Show status…" on Windows (see :func:`_show_status`).
+    for i in range(1, len(sys.argv) - 1):
+        if sys.argv[i] == "--show-status":
+            from .status_window import show_status_window
+
+            show_status_window(Path(sys.argv[i + 1]))
+            return 0
+
     try:
         import pystray  # type: ignore
     except Exception as exc:  # noqa: BLE001
@@ -405,9 +433,15 @@ def run() -> int:
 
     from . import consent as _consent
 
+    # True only when the user just clicked through the modal this session —
+    # used to mirror Windows UX: start the engine immediately after consent
+    # (Linux: polkit for ``systemctl start``) instead of leaving the service
+    # stopped behind a grey tray icon.
+    consent_fresh_accept = False
     if not _consent.has_accepted():
         if not _consent.run_first_run_dialog():
             return 4
+        consent_fresh_accept = True
         _consent.mark_accepted()
 
     controller = _make_controller()
@@ -554,12 +588,38 @@ def run() -> int:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("tray: auto-start failed: %s", exc)
 
+        # Linux: after first-run consent, mirror Windows — bring the systemd
+        # unit up immediately (``pkexec systemctl start``) instead of leaving
+        # the user on a grey icon until they discover the menu.  Also enable
+        # launch-on-login when supported so the checkbox matches expectation.
+        if IS_LINUX and consent_fresh_accept:
+            try:
+                if _autostart.is_supported() and not _autostart.is_enabled():
+                    _autostart.set_enabled(True)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("tray: first-run autostart enable failed: %s", exc)
+            if not state["running"]:
+                try:
+                    controller.start()
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("tray: Linux first-run start failed: %s", exc)
+            try:
+                state["running"] = controller.is_running()
+            except Exception:  # noqa: BLE001
+                pass
+
         # Fire a single "I'm here" toast so the user knows the tray
         # autostarted and the current service state, without having to
         # hunt for a grey-vs-colour icon amongst 20 other indicators.
         if state["running"]:
             _notify("whyDPI is active",
                     "Tray running — your connection is being protected.")
+        elif IS_LINUX and consent_fresh_accept:
+            _notify(
+                "Starting whyDPI…",
+                "Approve the password prompt (polkit) if shown. "
+                "The shield turns blue when the service is active.",
+            )
         else:
             _notify("whyDPI tray started",
                     "Service is currently stopped.  Click the tray icon to start it.")
@@ -574,3 +634,7 @@ def run() -> int:
     )
     icon.run(setup=setup)
     return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(run())
