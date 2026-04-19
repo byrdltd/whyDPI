@@ -17,6 +17,6 @@ pkgbase = whydpi
 	optdepends = libnotify: desktop toasts on tray startup and state change
 	conflicts = whydpi-git
 	source = whydpi-0.2.8.tar.gz::https://github.com/byrdltd/whyDPI/archive/v0.2.8.tar.gz
-	sha256sums = SKIP
+	sha256sums = 2ebe8e3371e67cf0b2c74b45c15d6e37925f008a017cd2e5d1ea51edd4b924a0
 
 pkgname = whydpi

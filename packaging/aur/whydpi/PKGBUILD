@@ -25,9 +25,8 @@ makedepends=(
 )
 conflicts=("${pkgname}-git")
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
-# sha256sum filled in by scripts/refresh-aur.sh after the GitHub tag
-# exists (GitHub generates the tarball on-demand per tag).
-sha256sums=('SKIP')
+# Updated when tagging v${pkgver} on GitHub (archive URL is stable).
+sha256sums=('2ebe8e3371e67cf0b2c74b45c15d6e37925f008a017cd2e5d1ea51edd4b924a0')
 
 build() {
   cd "whyDPI-${pkgver}"
