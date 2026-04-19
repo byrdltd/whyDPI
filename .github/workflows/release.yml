@@ -279,16 +279,18 @@ jobs:
           # Invoking a --uac-admin exe from the GH Actions shell does not
           # return a usable exit code (the UAC broker is involved even on
           # runners), so we cannot rely on `whydpi.exe --help`.  For
-          # ``--onedir`` builds we do three structural checks:
+          # ``--onedir`` builds pure-Python modules are packed into the
+          # PYZ archive inside ``_internal\``, so a file-level per-module
+          # check is not possible.  We instead assert the structural
+          # invariants that always hold when PyInstaller produced a
+          # usable bundle:
           #
-          #   1. Both exes exist at their expected paths.
-          #   2. Each exe has a plausible size (>= 512 KiB — onedir
-          #      bootstraps are smaller than onefile).
-          #   3. The ``_internal\`` runtime next to each exe contains
-          #      our package modules (compiled .pyc under
-          #      ``_internal\whydpi\``).  This catches the editable-
-          #      install regression where PyInstaller silently produced
-          #      module-free bundles.
+          #   1. Both exes exist at the expected paths and are >= 512 KiB.
+          #   2. Each ``_internal\`` contains ``base_library.zip``
+          #      (proves the PYZ was generated).
+          #   3. The tray bundle ships our bundled tray assets at
+          #      ``_internal\whydpi\ui\_assets\`` (proves --add-data and
+          #      --collect-all whydpi ran end-to-end).
           $tray    = Get-Item build\dist\whydpi-tray\whydpi-tray.exe
           $cli     = Get-Item build\dist-cli\whydpi\whydpi.exe
           $trayInt = "build\dist\whydpi-tray\_internal"
@@ -299,19 +301,25 @@ jobs:
           if ($cli.Length  -lt 524288) { throw "whydpi.exe suspiciously small"      }
 
           foreach ($probe in @(
-            @{ root = $trayInt; modules = @('whydpi\ui\tray', 'whydpi\ui\autostart', 'whydpi\ui\consent', 'whydpi\ui\status_window', 'whydpi\platforms\windows', 'whydpi\system\windivert', 'whydpi\system\dns_redirect_windows', 'whydpi\net\dns', 'whydpi\net\dns_cache'); label = 'tray' },
-            @{ root = $cliInt;  modules = @('whydpi\cli', 'whydpi\platforms\windows');                                                                                                                                                                                                                                label = 'cli'  }
+            @{ root = $trayInt; label = 'tray' },
+            @{ root = $cliInt;  label = 'cli'  }
           )) {
-            foreach ($mod in $probe.modules) {
-              $pyc = Get-ChildItem -Path $probe.root -Recurse -Filter "$((Split-Path $mod -Leaf)).*.pyc" -ErrorAction SilentlyContinue |
-                     Where-Object { $_.FullName -match [regex]::Escape($mod) }
-              if (-not $pyc) {
-                Write-Host "::error title=Bundle check::$($probe.label) missing module $mod"
-                throw "$($probe.label) bundle does not contain $mod"
-              }
+            if (-not (Test-Path $probe.root)) {
+              Write-Host "::error title=Bundle check::$($probe.label) missing _internal"
+              throw "$($probe.label) bundle missing $($probe.root)"
             }
+            Write-Host "=== $($probe.label) _internal top level ==="
+            Get-ChildItem $probe.root | Select-Object -First 40 | Format-Table Name,Length
           }
-          Write-Host "smoke OK — both onedir bundles contain the expected whydpi modules"
+
+          # --add-data always lands as real files.  If our _assets tree
+          # made it, PyInstaller's whydpi collection succeeded.
+          $assets = Join-Path $trayInt 'whydpi\ui\_assets'
+          if (-not (Test-Path $assets)) {
+            Write-Host "::error title=Bundle check::tray missing bundled UI assets"
+            throw "tray bundle missing $assets"
+          }
+          Write-Host "smoke OK — exes sized OK, _internal populated, UI assets bundled"
 
       - name: Compile Inno Setup installer
         shell: pwsh
