@@ -6,7 +6,7 @@
     "architecture": {
         "64bit": {
             "url": "https://github.com/byrdltd/whyDPI/releases/download/v1.0.1/whydpi-tray-1.0.1-win64.zip",
-            "hash": "79b1aa9b011b225564613ae99c0cad54328cbd856b1406a00ac1580376bb2b95",
+            "hash": "f713da706facd4c75f13ff4fee5a9c664126173e9b5f243b7dd7f37eb34ef6c1",
             "extract_dir": "whydpi-tray"
         }
     },
