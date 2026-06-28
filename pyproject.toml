@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "whydpi"
+version = "1.0.1"
+description = "Educational DPI bypass tool — adaptive per-SNI TLS fragmentation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+    { name = "whyDPI Contributors" },
+]
+keywords = ["dpi", "tls", "fragmentation", "networking", "research", "education"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Education",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Education",
+    "Topic :: Security",
+    "Topic :: System :: Networking",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+]
+dependencies = [
+    'tomli; python_version < "3.11"',
+]
+
+[project.optional-dependencies]
+# Windows runtime: packet capture + tray UI.  Installed automatically by
+# pip when a user runs ``pip install "whydpi[windows]"`` on Windows; the
+# marker keeps them out of the Linux install footprint.
+windows = [
+    'pydivert >= 3.0; sys_platform == "win32"',
+    'pystray >= 0.19; sys_platform == "win32"',
+    'Pillow  >= 10;   sys_platform == "win32"',
+]
+# Cross-platform tray on Linux (GNOME/KDE with AppIndicator) uses the
+# same extras; kept separate so Linux packagers can opt in without the
+# WinDivert pull-in.
+tray = [
+    'pystray >= 0.19',
+    'Pillow  >= 10',
+]
+dev = [
+    "pytest>=7.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/byrdltd/whyDPI"
+Issues = "https://github.com/byrdltd/whyDPI/issues"
+Source = "https://github.com/byrdltd/whyDPI"
+
+[project.scripts]
+whydpi = "whydpi.cli:main"
+
+[project.gui-scripts]
+# Phase 3 target.  Registered now so the Windows PyInstaller build
+# (Phase 4) can already reference this entry point.
+whydpi-tray = "whydpi.ui.tray:run"
+
+[tool.setuptools.packages.find]
+include = ["whydpi*"]
+exclude = ["tests*", "packaging*"]
+
+[tool.setuptools.package-data]
+# Ship the tray icon inside the wheel so ``importlib.resources`` can
+# find it regardless of whether the user installed via pip, AUR, .deb
+# or .rpm.
+"whydpi.ui" = ["_assets/*.png"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-q"

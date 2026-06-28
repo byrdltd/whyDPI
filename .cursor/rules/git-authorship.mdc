@@ -1,0 +1,54 @@
+---
+description: Git authorship — byrdltd only; never add Cursor co-author trailers
+alwaysApply: true
+---
+
+# Git commit authorship (whyDPI)
+
+This repository has **one human maintainer on GitHub**: `byrdltd`.
+The public Contributors graph must stay that way.
+
+## Hard rules for agents and automation
+
+1. **Never** append `Co-authored-by:` trailers — especially
+   `Co-authored-by: Cursor <cursoragent@cursor.com>`. Cursor's IDE
+   integration injects this when using plain `git commit`; it pollutes
+   the GitHub Contributors page permanently.
+2. **Author and committer** must always be:
+   `byrdltd <byrdltd@users.noreply.github.com>`.
+3. **Do not** use `git commit --amend` for commits that may have been
+   created through Cursor's commit path if a co-author trailer might
+   reappear — verify with `git log -1 --format=%B`.
+4. When the user asks for commits and co-author injection is a risk,
+   build the commit with **`git commit-tree`** instead of `git commit`:
+
+   ```bash
+   export GIT_AUTHOR_NAME='byrdltd'
+   export GIT_AUTHOR_EMAIL='byrdltd@users.noreply.github.com'
+   export GIT_COMMITTER_NAME='byrdltd'
+   export GIT_COMMITTER_EMAIL='byrdltd@users.noreply.github.com'
+   TREE=$(git write-tree)
+   PARENT=$(git rev-parse HEAD)   # omit -p for root commit
+   git commit-tree "$TREE" -p "$PARENT" -F /path/to/msg.txt
+   git reset --hard <new-sha>
+   ```
+
+5. After every commit, **verify** before push:
+
+   ```bash
+   git log -1 --format='%B' | grep -iE 'co-authored-by|cursoragent' && echo BAD || echo OK
+   ```
+
+6. Release automation (Scoop manifest, AUR checksums) commits as
+   **byrdltd**, never `whydpi-release-bot` or `github-actions[bot]`
+   on `main`.
+
+## Hooks
+
+Local guards live in `.githooks/commit-msg` and
+`scripts/reject-cursor-coauthor.sh`. Enable once per clone:
+
+```bash
+git config core.hooksPath .githooks
+# or: pre-commit install --hook-type commit-msg
+```

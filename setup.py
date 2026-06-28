@@ -1,0 +1,49 @@
+# Copyright (c) 2025 whyDPI Contributors
+# SPDX-License-Identifier: MIT
+# For educational and research purposes only
+
+"""
+Setup script for whyDPI
+"""
+
+from setuptools import setup, find_packages
+
+with open("README.md", "r", encoding="utf-8") as f:
+    long_description = f.read()
+
+setup(
+    name="whydpi",
+    version="1.0.1",
+    author="whyDPI Contributors",
+    description="Educational DPI bypass tool for research purposes",
+    long_description=long_description,
+    long_description_content_type="text/markdown",
+    url="https://github.com/byrdltd/whyDPI",
+    packages=find_packages(),
+    classifiers=[
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: Education",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Science/Research",
+        "Topic :: Education",
+        "Topic :: Security",
+        "Topic :: System :: Networking",
+        "License :: OSI Approved :: MIT License",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
+        "Programming Language :: Python :: 3.13",
+        "Operating System :: POSIX :: Linux",
+        "Operating System :: Microsoft :: Windows",
+    ],
+    python_requires=">=3.10",
+    install_requires=[
+        'tomli; python_version < "3.11"',
+    ],
+    entry_points={
+        "console_scripts": [
+            "whydpi=whydpi.cli:main",
+        ],
+    },
+)

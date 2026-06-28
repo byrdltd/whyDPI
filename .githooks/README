@@ -1,0 +1,12 @@
+Git hooks for this repository.
+
+Enable after clone:
+
+    git config core.hooksPath .githooks
+
+The commit-msg hook blocks Cursor `Co-authored-by` trailers so the
+GitHub Contributors page stays maintainer-only.
+
+Alternative (pre-commit framework):
+
+    pip install pre-commit && pre-commit install --hook-type commit-msg

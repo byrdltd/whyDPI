@@ -1,0 +1,547 @@
+name: Build release packages
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build for (e.g. v1.0.1)'
+        required: true
+        type: string
+
+permissions:
+  contents: write  # upload release assets + push bucket manifest updates
+
+jobs:
+  # --------------------------------------------------------------------------
+  #  Debian / Ubuntu  →  .deb
+  # --------------------------------------------------------------------------
+  deb:
+    name: Build .deb (${{ matrix.image }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: debian:bookworm
+            slug: debian12
+          - image: ubuntu:24.04
+            slug: ubuntu24.04
+          - image: ubuntu:22.04
+            slug: ubuntu22.04
+    container:
+      image: ${{ matrix.image }}
+    steps:
+      - name: Install build dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          apt-get update -qq
+          apt-get install -y --no-install-recommends \
+            build-essential devscripts dpkg-dev debhelper dh-python \
+            python3-all python3-build python3-setuptools python3-wheel \
+            pybuild-plugin-pyproject lintian git ca-certificates
+
+      - uses: actions/checkout@v4
+
+      - name: Build .deb
+        run: |
+          packaging/debian/build-deb.sh
+
+      - name: Rename artifacts for the release
+        run: |
+          cd packaging/debian/dist
+          VERSION=$(ls whydpi_*.deb | sed -E 's/whydpi_([^_]+)_.*/\1/')
+          for f in whydpi_${VERSION}_all.deb; do
+            mv "$f" "whydpi_${VERSION}_${{ matrix.slug }}_all.deb"
+          done
+          ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.slug }}
+          path: packaging/debian/dist/*.deb
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
+  #  Fedora  →  .rpm
+  # --------------------------------------------------------------------------
+  rpm:
+    name: Build .rpm (fedora:${{ matrix.fedora }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        fedora: ['41', '40']
+    container:
+      image: fedora:${{ matrix.fedora }}
+    steps:
+      - name: Install build dependencies
+        run: |
+          dnf install -y --quiet \
+            rpm-build rpmlint git tar \
+            python3-devel python3-setuptools python3-build \
+            python3-installer python3-wheel systemd-rpm-macros
+
+      - uses: actions/checkout@v4
+
+      - name: Build .rpm
+        run: |
+          packaging/fedora/build-rpm.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          # Artifact names must not contain ':', so we spell the matrix
+          # key as a plain Fedora version number.
+          name: rpm-fedora${{ matrix.fedora }}
+          path: packaging/fedora/dist/*.rpm
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
+  #  Windows  →  whydpi-tray.exe + whydpi.exe + whydpi-<ver>-setup.exe
+  # --------------------------------------------------------------------------
+  windows:
+    name: Build Windows installer
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install build deps
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          # NOTE: non-editable install on purpose.  PyInstaller's static
+          # module graph does not reliably follow `pip install -e` (the
+          # package lives behind a .pth file, not as a real directory in
+          # site-packages), which silently produced exes that raised
+          # `ModuleNotFoundError: whydpi.ui.tray` at startup on end-user
+          # machines.  A regular install drops the tree into site-packages
+          # where PyInstaller's collector can see every submodule.
+          pip install ".[windows]"
+          pip install pyinstaller
+
+      - name: Derive version
+        id: ver
+        shell: pwsh
+        run: |
+          $tag = "${{ github.event.inputs.tag || github.ref_name }}"
+          $ver = $tag -replace '^v', ''
+          if ([string]::IsNullOrWhiteSpace($ver)) { $ver = '0.0.0' }
+          "WHYDPI_VERSION=$ver" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "version=$ver"        | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "resolved version: $ver"
+
+      - name: Diagnostics (Python + deps)
+        shell: pwsh
+        run: |
+          python --version
+          python -c "import sys; print('sys.platform =', sys.platform)"
+          pip --version
+          pyinstaller --version
+          pip list
+          Write-Host "---- import-time probe ----"
+          python -c "from whydpi.ui.tray import run; print('tray import ok')"
+          python -c "from whydpi.platforms import windows; print('platforms.windows import ok')"
+          python -c "from whydpi.system import windivert, dns_redirect_windows; print('system modules import ok')"
+
+      - name: Build whydpi-tray (onedir)
+        shell: pwsh
+        working-directory: packaging\windows
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $log = "build\tray-build.log"
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          # Use absolute paths for --add-data / --icon: PyInstaller's
+          # relative-path resolution behaved inconsistently against the
+          # pwsh working directory (only one ".." was consumed per call,
+          # so "..\..\whydpi" landed at packaging\whydpi).
+          $repo   = "${env:GITHUB_WORKSPACE}"
+          $assets = Join-Path $repo "whydpi\ui\_assets"
+          $icon   = Join-Path $repo "assets\favicon.ico"
+          Write-Host "assets src : $assets"
+          Write-Host "icon       : $icon"
+          # ``--onedir`` rather than ``--onefile``: WinDivert keeps its
+          # kernel driver file mapped after the userspace handle is
+          # closed, so the onefile bootloader's ``_MEI*`` temp-directory
+          # cleanup races the driver and loses — surfacing as a "Failed
+          # to remove temporary directory" popup every time the tray
+          # exits.  Shipping the runtime alongside the exe inside
+          # ``{app}\_internal\`` eliminates the temp extraction entirely.
+          # Keep this in sync with ``packaging/windows/build.ps1``.
+          pyinstaller --onedir --windowed --uac-admin `
+            --log-level=INFO `
+            --icon="$icon" `
+            --add-data "${assets};whydpi/ui/_assets" `
+            --collect-all whydpi `
+            --collect-all pydivert `
+            --collect-all pystray `
+            --collect-all PIL `
+            --copy-metadata whydpi `
+            --hidden-import whydpi.platforms.windows `
+            --hidden-import whydpi.system.windivert `
+            --hidden-import whydpi.system.dns_redirect_windows `
+            --hidden-import whydpi.system._trace `
+            --hidden-import whydpi.net.dns `
+            --hidden-import whydpi.net.dns_cache `
+            --hidden-import whydpi.ui.tray `
+            --hidden-import whydpi.ui.autostart `
+            --hidden-import whydpi.ui.consent `
+            --hidden-import whydpi.ui.status_window `
+            --name whydpi-tray `
+            --distpath build\dist `
+            --workpath build\work `
+            --specpath build `
+            tray_entry.py 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          Write-Host ("---- tail of PyInstaller log (exit={0}) ----" -f $code)
+          if (Test-Path $log) { Get-Content $log -Tail 120 }
+          if ($code -ne 0 -and (Test-Path $log)) {
+            # Surface the actually-useful lines as workflow annotations
+            # so they show up via the check-runs API without needing
+            # repo log-read auth.
+            Get-Content $log | ForEach-Object {
+              if ($_ -match '^(ERROR|RecursionError|ModuleNotFoundError|ImportError|SyntaxError|Traceback|FileNotFoundError|PermissionError|OSError)') {
+                $msg = $_ -replace '%','%25' -replace "`r",'' -replace "`n",'%0A'
+                Write-Host "::error title=PyInstaller::$msg"
+              }
+            }
+          }
+          Write-Host "---- PyInstaller warn files (if any) ----"
+          Get-ChildItem build\work -Recurse -Filter "warn-*.txt" -ErrorAction SilentlyContinue | `
+            ForEach-Object {
+              Write-Host "== $($_.FullName) =="
+              $wcontent = Get-Content $_.FullName -Tail 60
+              $wcontent | ForEach-Object { Write-Host $_ }
+              if ($code -ne 0) {
+                $msg = ($wcontent -join '%0A') -replace '%(?!0A)','%25'
+                Write-Host "::warning title=PyInstaller warn file::$msg"
+              }
+            }
+          if ($code -ne 0) { throw "pyinstaller tray build failed (exit $code)" }
+
+      - name: Upload PyInstaller logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-build-logs
+          path: |
+            packaging/windows/build/*.log
+            packaging/windows/build/work/**/warn-*.txt
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Build whydpi CLI (onedir)
+        shell: pwsh
+        working-directory: packaging\windows
+        run: |
+          $ErrorActionPreference = 'Continue'
+          $log = "build\cli-build.log"
+          $icon = Join-Path "${env:GITHUB_WORKSPACE}" "assets\favicon.ico"
+          # Separate ``--distpath build\dist-cli`` so the CLI's
+          # ``_internal\`` tree cannot collide with the tray's under
+          # ``build\dist\whydpi-tray\``.  The installer lays them out
+          # as ``{app}\...`` and ``{app}\cli\...`` to mirror this.
+          pyinstaller --onedir --console --uac-admin `
+            --log-level=INFO `
+            --icon="$icon" `
+            --collect-all whydpi `
+            --collect-all pydivert `
+            --copy-metadata whydpi `
+            --hidden-import whydpi.platforms.windows `
+            --hidden-import whydpi.system.windivert `
+            --hidden-import whydpi.system.dns_redirect_windows `
+            --hidden-import whydpi.system._trace `
+            --hidden-import whydpi.net.dns `
+            --hidden-import whydpi.net.dns_cache `
+            --hidden-import whydpi.cli `
+            --name whydpi `
+            --distpath build\dist-cli `
+            --workpath build\work `
+            --specpath build `
+            cli_entry.py 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          Write-Host ("---- tail of PyInstaller log (exit={0}) ----" -f $code)
+          if (Test-Path $log) { Get-Content $log -Tail 80 }
+          if ($code -ne 0) { throw "pyinstaller cli build failed (exit $code)" }
+
+      - name: Smoke-test the built executables
+        shell: pwsh
+        working-directory: packaging\windows
+        run: |
+          # Invoking a --uac-admin exe from the GH Actions shell does not
+          # return a usable exit code (the UAC broker is involved even on
+          # runners), so we cannot rely on `whydpi.exe --help`.  For
+          # ``--onedir`` builds pure-Python modules are packed into the
+          # PYZ archive inside ``_internal\``, so a file-level per-module
+          # check is not possible.  We instead assert the structural
+          # invariants that always hold when PyInstaller produced a
+          # usable bundle:
+          #
+          #   1. Both exes exist at the expected paths and are >= 512 KiB.
+          #   2. Each ``_internal\`` contains ``base_library.zip``
+          #      (proves the PYZ was generated).
+          #   3. The tray bundle ships our bundled tray assets at
+          #      ``_internal\whydpi\ui\_assets\`` (proves --add-data and
+          #      --collect-all whydpi ran end-to-end).
+          $tray    = Get-Item build\dist\whydpi-tray\whydpi-tray.exe
+          $cli     = Get-Item build\dist-cli\whydpi\whydpi.exe
+          $trayInt = "build\dist\whydpi-tray\_internal"
+          $cliInt  = "build\dist-cli\whydpi\_internal"
+          Write-Host ("whydpi-tray.exe : {0} bytes" -f $tray.Length)
+          Write-Host ("whydpi.exe      : {0} bytes" -f $cli.Length)
+          if ($tray.Length -lt 524288) { throw "whydpi-tray.exe suspiciously small" }
+          if ($cli.Length  -lt 524288) { throw "whydpi.exe suspiciously small"      }
+
+          foreach ($probe in @(
+            @{ root = $trayInt; label = 'tray' },
+            @{ root = $cliInt;  label = 'cli'  }
+          )) {
+            if (-not (Test-Path $probe.root)) {
+              Write-Host "::error title=Bundle check::$($probe.label) missing _internal"
+              throw "$($probe.label) bundle missing $($probe.root)"
+            }
+            Write-Host "=== $($probe.label) _internal top level ==="
+            Get-ChildItem $probe.root | Select-Object -First 40 | Format-Table Name,Length
+          }
+
+          # --add-data always lands as real files.  If our _assets tree
+          # made it, PyInstaller's whydpi collection succeeded.
+          $assets = Join-Path $trayInt 'whydpi\ui\_assets'
+          if (-not (Test-Path $assets)) {
+            Write-Host "::error title=Bundle check::tray missing bundled UI assets"
+            throw "tray bundle missing $assets"
+          }
+          Write-Host "smoke OK — exes sized OK, _internal populated, UI assets bundled"
+
+      - name: Compile Inno Setup installer
+        shell: pwsh
+        working-directory: packaging\windows
+        env:
+          WHYDPI_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          Write-Host "ISCC path : $iscc"
+          Write-Host "ISCC exists: $(Test-Path $iscc)"
+          if (-not (Test-Path $iscc)) {
+            # Fall back to any other Inno Setup version preinstalled on
+            # the runner image.
+            $iscc = (Get-ChildItem "C:\Program Files (x86)\Inno Setup*\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName
+            Write-Host "fallback ISCC path: $iscc"
+          }
+          Write-Host "=== payload tree ==="
+          Get-ChildItem build\dist
+          Write-Host "=== iss references ==="
+          Get-Content whydpi.iss | Select-String -Pattern '^Source:|^SetupIconFile|^LicenseFile'
+
+          $isccLog = "build\iscc.log"
+          & "$iscc" /V9 whydpi.iss 2>&1 | Tee-Object -FilePath $isccLog
+          $code = $LASTEXITCODE
+          Write-Host "ISCC exit: $code"
+          if ($code -ne 0) {
+            Write-Host "---- ISCC output ----"
+            Get-Content $isccLog | ForEach-Object {
+              Write-Host $_
+              if ($_ -match '(^Error|Internal error|expected|unknown|cannot|invalid|not found)') {
+                $msg = $_ -replace '%','%25' -replace "`r",'' -replace "`n",'%0A'
+                Write-Host "::error title=Inno Setup::$msg"
+              }
+            }
+            throw "Inno Setup compilation failed (exit $code)"
+          }
+          Write-Host "=== dist/ after compile ==="
+          Get-ChildItem dist -ErrorAction SilentlyContinue
+
+      - name: Collect artefacts
+        shell: pwsh
+        env:
+          WHYDPI_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force -Path out | Out-Null
+          # Portable / Scoop-friendly zip of the tray onedir tree.  Scoop
+          # extracts it into ``%USERPROFILE%\scoop\apps\whydpi\current\``
+          # and uses ``extract_dir = whydpi-tray`` to flatten the top
+          # folder so ``whydpi-tray.exe`` ends up directly under
+          # ``current\``.
+          $ver = $env:WHYDPI_VERSION
+          $trayZip = "out\whydpi-tray-$ver-win64.zip"
+          $cliZip  = "out\whydpi-cli-$ver-win64.zip"
+          Compress-Archive -Path packaging\windows\build\dist\whydpi-tray `
+                           -DestinationPath $trayZip -Force
+          Compress-Archive -Path packaging\windows\build\dist-cli\whydpi `
+                           -DestinationPath $cliZip  -Force
+          Copy-Item packaging\windows\dist\*.exe out\
+          Write-Host "=== artefacts ==="
+          Get-ChildItem out | Format-Table Name,Length,LastWriteTime
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            out\*.exe
+            out\*.zip
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
+  #  Attach everything to the release (tag pushes only)
+  # --------------------------------------------------------------------------
+  release:
+    name: Attach to GitHub Release
+    needs: [deb, rpm, windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: List artefacts
+        run: |
+          ls -la dist/
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+
+          echo "gh version:"
+          gh --version
+          echo "GH_TOKEN set: $([ -n "${GH_TOKEN:-}" ] && echo yes || echo NO)"
+          echo "GITHUB_REPOSITORY: ${GITHUB_REPOSITORY:-unset}"
+          echo "TAG: $TAG"
+
+          mapfile -t FILES < <(ls dist/*.deb dist/*.rpm dist/*.exe dist/*.zip 2>/dev/null)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "::error::no artefacts to upload" >&2
+            exit 1
+          fi
+          echo "uploading ${#FILES[@]} file(s):"
+          printf '  %s\n' "${FILES[@]}"
+
+          # Curated release notes so users can tell at a glance which asset
+          # to download. Auto-generated notes live below as a "What changed"
+          # appendix for maintainers.
+          cat > /tmp/notes.md <<'EOF'
+          ## Which file should I download?
+
+          | If you run... | Grab this asset |
+          |---|---|
+          | **Windows 10 / 11** (normal user) | **`whydpi-VERSION-setup.exe`** — one-click installer with Start Menu shortcut, autostart and uninstaller |
+          | **Windows + Scoop / portable** | `whydpi-tray-VERSION-win64.zip` — unzip and run `whydpi-tray.exe` (no installer, no autostart) |
+          | **Arch / Manjaro / EndeavourOS** | `yay -S whydpi` (AUR) — do *not* download anything here |
+          | **Debian / Ubuntu / Mint** | `whydpi_VERSION-1_all.deb` |
+          | **Fedora / Nobara** | `whydpi-VERSION-1.fcXX.noarch.rpm` |
+          | **Other distros / source** | [`Source code (tar.gz)`](#) below |
+
+          > `whydpi.exe` is the command-line companion; the installer already
+          > ships it internally, so you only need it for advanced scripting.
+
+          ---
+
+          EOF
+          # Replace the literal VERSION token with the actual tag (minus leading v)
+          VER="${TAG#v}"
+          sed -i "s/VERSION/${VER}/g" /tmp/notes.md
+
+          # Append auto-generated changelog to the curated header.
+          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            --jq .body >> /tmp/notes.md || echo "(auto-notes unavailable)" >> /tmp/notes.md
+
+          # --repo is required because this job doesn't check the repo
+          # out — gh falls back to local git context otherwise and dies
+          # with "not a git repository".
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "release $TAG already exists — uploading assets + refreshing notes"
+            gh release upload "$TAG" "${FILES[@]}" --repo "$GITHUB_REPOSITORY" --clobber
+            rc=$?
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --notes-file /tmp/notes.md || true
+          else
+            echo "creating release $TAG"
+            gh release create "$TAG" "${FILES[@]}" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TAG" \
+              --notes-file /tmp/notes.md 2>&1 | tee /tmp/ghcreate.log
+            rc=${PIPESTATUS[0]}
+            if [ "$rc" -ne 0 ]; then
+              while IFS= read -r line; do
+                [ -z "$line" ] && continue
+                safe=$(printf '%s' "$line" | sed 's/%/%25/g' | tr '\n' ' ')
+                echo "::error title=gh release create::$safe"
+              done < /tmp/ghcreate.log
+            fi
+          fi
+          exit ${rc:-0}
+
+  # --------------------------------------------------------------------------
+  #  Scoop bucket manifest — update hash + version in bucket/whydpi.json
+  #  so `scoop install whydpi` works immediately after the release lands.
+  # --------------------------------------------------------------------------
+  scoop-bucket:
+    name: Refresh Scoop manifest
+    needs: [release]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: windows-assets
+
+      - name: Update bucket/whydpi.json
+        run: |
+          set -euo pipefail
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VER="${TAG#v}"
+          ZIP="windows-assets/whydpi-tray-${VER}-win64.zip"
+          [ -f "$ZIP" ] || { echo "missing $ZIP"; ls -la windows-assets; exit 1; }
+          HASH=$(sha256sum "$ZIP" | awk '{print $1}')
+          python3 - "$VER" "$HASH" <<'PY'
+          import json, pathlib, sys
+          ver, hsh = sys.argv[1], sys.argv[2]
+          p = pathlib.Path("bucket/whydpi.json")
+          data = json.loads(p.read_text(encoding="utf-8"))
+          data["version"] = ver
+          data["architecture"]["64bit"]["url"] = (
+              f"https://github.com/byrdltd/whyDPI/releases/download/v{ver}/whydpi-tray-{ver}-win64.zip"
+          )
+          data["architecture"]["64bit"]["hash"] = hsh
+          data["architecture"]["64bit"]["extract_dir"] = "whydpi-tray"
+          if "autoupdate" in data:
+              data["autoupdate"]["architecture"]["64bit"]["url"] = (
+                  f"https://github.com/byrdltd/whyDPI/releases/download/v$version/whydpi-tray-$version-win64.zip"
+              )
+              data["autoupdate"]["architecture"]["64bit"]["extract_dir"] = "whydpi-tray"
+          p.write_text(json.dumps(data, indent=4) + "\n", encoding="utf-8")
+          print(f"bucket/whydpi.json -> {ver} / {hsh[:12]}...")
+          PY
+
+      - name: Commit and push
+        run: |
+          set -e
+          git config user.name  "byrdltd"
+          git config user.email "byrdltd@users.noreply.github.com"
+          if git diff --quiet bucket/whydpi.json; then
+            echo "no manifest change; skipping commit"
+            exit 0
+          fi
+          git add bucket/whydpi.json
+          git commit -m "Refresh Scoop manifest for ${{ github.event.inputs.tag || github.ref_name }}"
+          git push origin HEAD:main

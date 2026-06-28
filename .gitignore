@@ -1,0 +1,114 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+# ...but not our RPM spec under packaging/
+!packaging/**/*.spec
+# Kökte PyInstaller (ör. gelecekte Windows) .spec yalnız bırak; genel `*.spec` buna
+# yine uygulandığından kök eşleşmeleri aç.
+!/*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# pre-commit
+.pre-commit/
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+.venv-build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+*.log
+*.pid
+config.local.toml
+
+# Packaging — build artifacts / downloaded sources
+packaging/**/*.tar.gz
+packaging/**/*.tar.zst
+packaging/**/*.pkg.tar.*
+packaging/**/*.deb
+packaging/**/*.buildinfo
+packaging/**/*.changes
+packaging/**/src/
+packaging/**/pkg/
+packaging/**/dist/
+
+# Docs - keep legacy stuff private
+docs/
+
+# Security - CRITICAL: Never commit credentials
+.git-credentials
+.netrc
+*.token
+*.key
+.env
+.env.*
+credentials.json
+secrets.*
+
+# CI / güvenlik taramaları (yerel çalıştırmalardan kalabilir; repoya sokulmamalı)
+bandit-report.json
+safety-report.json
+
+# Diagnostic harness — maintainer-only.  The ``diag/`` folder holds
+# throwaway probes, admin wrappers and ad-hoc logs that are valuable
+# locally but would leak too much of our debugging methodology (and
+# sometimes site names) into a public repo.  Keep it out of the tree
+# entirely; contributors who need it can recreate their own.
+diag/

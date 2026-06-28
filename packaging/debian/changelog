@@ -1,0 +1,12 @@
+whydpi (1.0.1-1) unstable; urgency=medium
+
+  * Public release on a fresh repository.  Adaptive, per-SNI TLS
+    fragmentation with parallel strategy discovery; DoH stub resolver;
+    IPv4/IPv6 transparent proxy; CDN IP-range rotation via multi-resolver
+    DoH and prefix-aware alternate selection; Encrypted-ClientHello
+    neutralisation at the DNS stub; multi-record ClientHello reassembly;
+    cached-passthrough fall-through to discovery; cross-platform system
+    tray; Windows WinDivert decoy fragmentation fallback; commit hooks and
+    Cursor rules blocking Co-authored-by trailers.
+
+ -- byrdltd <byrdltd@users.noreply.github.com>  Sun, 28 Jun 2026 14:15:00 +0000
