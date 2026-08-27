@@ -28,7 +28,7 @@ makedepends=(
 conflicts=("${pkgname}-git")
 install="${pkgname}.install"
 source=("${pkgname}-${pkgver}.tar.gz::${url}/archive/v${pkgver}.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('0e56ded7338973cdb4c172ae54d018fb9b362ecbbb28cb46f52aeaa1d7809898')
 
 build() {
   cd "whyDPI-${pkgver}"

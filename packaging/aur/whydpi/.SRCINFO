@@ -20,6 +20,6 @@ pkgbase = whydpi
 	optdepends = zenity: native first-run dialog
 	conflicts = whydpi-git
 	source = whydpi-1.3.0.tar.gz::https://github.com/byrdltd/whyDPI/archive/v1.3.0.tar.gz
-	sha256sums = SKIP
+	sha256sums = 0e56ded7338973cdb4c172ae54d018fb9b362ecbbb28cb46f52aeaa1d7809898
 
 pkgname = whydpi
