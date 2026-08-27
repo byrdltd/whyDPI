@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+
+#DEBHELPER#
+
+if [ "$1" = configure ]; then
+    if [ -x /usr/lib/whydpi/first-run-launch.sh ]; then
+        if [ -n "${2:-}" ]; then
+            /usr/lib/whydpi/first-run-launch.sh --restart || true
+        else
+            /usr/lib/whydpi/first-run-launch.sh || true
+        fi
+    fi
+fi
+
+exit 0

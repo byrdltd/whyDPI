@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+#DEBHELPER#
+
+if [ "$1" = remove ] || [ "$1" = upgrade ]; then
+    pkill -f '/usr/bin/whydpi-tray' >/dev/null 2>&1 || true
+    pkill -f 'python.*-m whydpi.ui.tray' >/dev/null 2>&1 || true
+fi
+
+exit 0

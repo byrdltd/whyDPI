@@ -1,0 +1,27 @@
+pkgbase = whydpi-git
+	pkgdesc = Adaptive, per-SNI DPI bypass that learns optimal TLS fragmentation per host (git, main branch)
+	pkgver = 1.3.0
+	pkgrel = 1
+	url = https://github.com/byrdltd/whyDPI
+	install = whydpi-git.install
+	arch = any
+	license = MIT
+	makedepends = git
+	makedepends = python-build
+	makedepends = python-installer
+	makedepends = python-setuptools
+	makedepends = python-wheel
+	depends = python>=3.10
+	depends = iptables
+	optdepends = systemd: run whydpi as a service at boot
+	optdepends = python-pystray: system-tray icon with Start/Stop/status from the desktop
+	optdepends = python-pillow: icon rendering for the tray
+	optdepends = libnotify: desktop toasts on tray startup and state change
+	optdepends = tk: first-run acceptable-use dialog
+	optdepends = zenity: native first-run dialog
+	provides = whydpi=1.3.0
+	conflicts = whydpi
+	source = whydpi::git+https://github.com/byrdltd/whyDPI.git
+	sha256sums = SKIP
+
+pkgname = whydpi-git

@@ -1,0 +1,45 @@
+{
+    "version": "1.3.0",
+    "description": "Adaptive, per-SNI DPI bypass that learns optimal TLS fragmentation per host.",
+    "homepage": "https://github.com/byrdltd/whyDPI",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/byrdltd/whyDPI/releases/download/v1.3.0/whydpi-tray-1.3.0-win64.zip",
+            "hash": "a62142c19e908bd20d54dc09cbe02c3c1d02be91a3a3298d3f89049a7decc681",
+            "extract_dir": "whydpi-tray"
+        }
+    },
+    "shortcuts": [
+        [
+            "whydpi-tray.exe",
+            "whyDPI"
+        ]
+    ],
+    "notes": [
+        "whyDPI needs Administrator rights to load the WinDivert driver,",
+        "which intercepts TLS/DNS at the packet layer.  Scoop installs",
+        "into %USERPROFILE%\\scoop\\apps\\whydpi\\current which is writable",
+        "without elevation, but launching whydpi-tray.exe triggers a UAC",
+        "prompt because the exe is built with an embedded admin manifest.",
+        "By running whyDPI you accept the terms in DISCLAIMER.md",
+        "(https://github.com/byrdltd/whyDPI/blob/main/DISCLAIMER.md)."
+    ],
+    "pre_uninstall": [
+        "Stop-Process -Name 'whydpi-tray','whydpi' -Force -ErrorAction SilentlyContinue",
+        "Start-Process -FilePath \"$env:SystemRoot\\System32\\sc.exe\" -ArgumentList 'stop','WinDivert' -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue",
+        "Start-Process -FilePath \"$env:SystemRoot\\System32\\sc.exe\" -ArgumentList 'stop','WinDivert14' -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue",
+        "Start-Process -FilePath \"$env:SystemRoot\\System32\\schtasks.exe\" -ArgumentList '/Delete','/F','/TN','whyDPI Tray' -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue"
+    ],
+    "checkver": {
+        "github": "https://github.com/byrdltd/whyDPI"
+    },
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/byrdltd/whyDPI/releases/download/v$version/whydpi-tray-$version-win64.zip",
+                "extract_dir": "whydpi-tray"
+            }
+        }
+    }
+}

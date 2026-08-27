@@ -1,0 +1,26 @@
+[Desktop Entry]
+Type=Application
+Name=whyDPI
+Name[de]=whyDPI
+Name[es]=whyDPI
+Name[fr]=whyDPI
+Name[ru]=whyDPI
+Name[tr]=whyDPI
+GenericName=DPI bypass controller
+GenericName[de]=Steuerung zur DPI-Umgehung
+GenericName[es]=Control de omisión de DPI
+GenericName[fr]=Contrôle de contournement DPI
+GenericName[ru]=Управление обходом DPI
+GenericName[tr]=DPI aşım denetimi
+Comment=Start, stop and monitor whyDPI from the system tray
+Comment[de]=whyDPI aus dem Infobereich starten, beenden und überwachen
+Comment[es]=Inicie, detenga y supervise whyDPI desde la bandeja del sistema
+Comment[fr]=Démarrer, arrêter et surveiller whyDPI depuis la zone de notification
+Comment[ru]=Запуск, остановка и контроль whyDPI из области уведомлений
+Comment[tr]=whyDPI hizmetini sistem tepsisinden başlatın, durdurun ve izleyin
+Exec=/usr/bin/whydpi-tray
+Icon=whydpi
+Terminal=false
+Categories=Network;
+Keywords=dpi;tls;bypass;network;proxy;
+StartupNotify=false

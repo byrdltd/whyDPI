@@ -1,0 +1,2 @@
+# Python >=3.11 uses stdlib tomllib. On older versions, install tomli.
+tomli; python_version < "3.11"

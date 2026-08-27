@@ -1,0 +1,9 @@
+whydpi (1.3.0-1) unstable; urgency=medium
+
+  * Adaptive per-SNI TLS fragmentation with parallel strategy discovery,
+    DoH stub resolver, IPv4/IPv6 transparent proxy, CDN IP-range rotation,
+    Encrypted-ClientHello neutralisation, multi-record ClientHello
+    reassembly, cross-platform system tray, and Windows WinDivert decoy
+    fragmentation fallback.
+
+ -- byrdltd <byrdltd@users.noreply.github.com>  Thu, 27 Aug 2026 20:20:00 +0300
