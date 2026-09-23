@@ -6,7 +6,7 @@
 %global pypi_name whydpi
 
 Name:           %{pypi_name}
-Version:        1.3.0
+Version:        1.3.1
 Release:        1%{?dist}
 Summary:        Adaptive, per-SNI DPI bypass with TLS fragmentation
 
@@ -113,6 +113,9 @@ fi
 %{_datadir}/icons/hicolor/*/apps/whydpi.png
 
 %changelog
+* Wed Sep 23 2026 byrdltd <byrdltd@users.noreply.github.com> - 1.3.1-1
+- Packaging refresh; no functional change since 1.3.0.
+
 * Thu Aug 27 2026 byrdltd <byrdltd@users.noreply.github.com> - 1.3.0-1
 - Adaptive per-SNI TLS fragmentation with parallel strategy discovery.
 - DoH stub resolver, IPv4/IPv6 transparent proxy, CDN IP-range rotation.
