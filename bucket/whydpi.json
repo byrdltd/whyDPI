@@ -1,12 +1,12 @@
 {
-    "version": "1.3.1",
+    "version": "1.3.2",
     "description": "Adaptive, per-SNI DPI bypass that learns optimal TLS fragmentation per host.",
     "homepage": "https://github.com/byrdltd/whyDPI",
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/byrdltd/whyDPI/releases/download/v1.3.1/whydpi-tray-1.3.1-win64.zip",
-            "hash": "5a6740f6da986e453b9e8c9928c6eb09b0c17a28749973d083fd956fe505f3e2",
+            "url": "https://github.com/byrdltd/whyDPI/releases/download/v1.3.2/whydpi-tray-1.3.2-win64.zip",
+            "hash": "9e5564e275bf44b3e64e7adc9bc33005bba602a0cb1f3e25018b273e58152fa4",
             "extract_dir": "whydpi-tray"
         }
     },
