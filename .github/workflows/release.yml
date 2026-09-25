@@ -432,6 +432,9 @@ jobs:
             echo "::error::no artefacts to upload" >&2
             exit 1
           fi
+          # The Windows in-app updater verifies setup.exe against this file.
+          (cd dist && sha256sum -- "${FILES[@]#dist/}") > dist/SHA256SUMS.txt
+          FILES+=(dist/SHA256SUMS.txt)
           echo "uploading ${#FILES[@]} file(s):"
           printf '  %s\n' "${FILES[@]}"
 

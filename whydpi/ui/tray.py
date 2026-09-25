@@ -503,6 +503,38 @@ def _confirm_windows_update(version: str) -> bool:
         return False
 
 
+_WM_NCACTIVATE = 0x0086
+
+
+def _let_tray_window_deactivate(icon, def_window_proc=None) -> None:
+    """Stop pystray's hidden window from vetoing activation changes.
+
+    pystray's win32 dispatcher answers 0 to every message it has no
+    handler for.  Before opening the menu it makes that hidden window
+    the foreground window; a later ``WM_NCACTIVATE(FALSE)`` answered
+    with 0 means "do not deactivate", so a dialog opened from a menu
+    callback never becomes active and swallows every click — the
+    update confirmation stayed on screen and ignored "Yes".  Passing
+    the message to ``DefWindowProc`` lets the dialog take focus.
+    """
+    handlers = getattr(icon, "_message_handlers", None)
+    if not isinstance(handlers, dict):
+        return
+    if def_window_proc is None:
+        import ctypes
+        from ctypes import wintypes
+
+        proc = ctypes.windll.user32.DefWindowProcW  # type: ignore[attr-defined]
+        proc.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+        proc.restype = ctypes.c_ssize_t
+        def_window_proc = proc
+
+    def _on_ncactivate(wparam, lparam):
+        return def_window_proc(icon._hwnd, _WM_NCACTIVATE, wparam, lparam)
+
+    handlers.setdefault(_WM_NCACTIVATE, _on_ncactivate)
+
+
 def _print_missing_deps_and_exit(exc: Exception) -> int:
     print(t("tray.error.missing_deps", error=exc), file=sys.stderr)
     return 2
@@ -807,6 +839,8 @@ def run() -> int:
     menu = pystray.Menu(*menu_items)
 
     icon = pystray.Icon("whydpi", current_icon(), title(), menu)
+    if IS_WINDOWS:
+        _let_tray_window_deactivate(icon)
     globals()["_TRAY_ICON"] = icon
 
     def poller() -> None:

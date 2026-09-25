@@ -6,7 +6,7 @@
 %global pypi_name whydpi
 
 Name:           %{pypi_name}
-Version:        1.3.1
+Version:        1.3.2
 Release:        1%{?dist}
 Summary:        Adaptive, per-SNI DPI bypass with TLS fragmentation
 
@@ -113,6 +113,10 @@ fi
 %{_datadir}/icons/hicolor/*/apps/whydpi.png
 
 %changelog
+* Fri Sep 25 2026 byrdltd <byrdltd@users.noreply.github.com> - 1.3.2-1
+- Windows: the update confirmation opened from the tray responds to "Yes";
+  the installer is verified with SHA256SUMS.txt.
+
 * Wed Sep 23 2026 byrdltd <byrdltd@users.noreply.github.com> - 1.3.1-1
 - Packaging refresh; no functional change since 1.3.0.
 

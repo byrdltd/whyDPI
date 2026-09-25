@@ -4,6 +4,6 @@
 
 """whyDPI — educational DPI bypass toolkit."""
 
-__version__ = "1.3.1"
+__version__ = "1.3.2"
 __author__ = "whyDPI Contributors"
 __license__ = "MIT"
