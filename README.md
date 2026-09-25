@@ -104,14 +104,10 @@ engine.
 
 ### Arch Linux (AUR)
 
-Two AUR packages are published:
-
-- [`whydpi`](https://aur.archlinux.org/packages/whydpi) — stable, built from the latest release tag (recommended)
-- [`whydpi-git`](https://aur.archlinux.org/packages/whydpi-git) — tracks the `main` branch, always bleeding-edge
+[`whydpi`](https://aur.archlinux.org/packages/whydpi), built from the latest release tag:
 
 ```bash
-paru -S whydpi           # stable
-# or: paru -S whydpi-git # bleeding-edge
+paru -S whydpi
 ```
 
 ### Debian / Ubuntu

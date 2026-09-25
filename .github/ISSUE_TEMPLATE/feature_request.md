@@ -123,4 +123,3 @@ Before submitting, please:
 - [ ] Check that this feature aligns with whyDPI's educational purpose
 - [ ] Search existing issues to avoid duplicates
 - [ ] Consider ethical implications of the feature
-- [ ] Read the [Contributing Guidelines](https://github.com/byrdltd/whyDPI/blob/main/CONTRIBUTING.md)
